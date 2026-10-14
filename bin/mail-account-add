@@ -12,30 +12,54 @@ die() { printf 'mail-account-add: %s\n' "$*" >&2; exit 1; }
 # prompt VAR QUESTION [DEFAULT]
 prompt() {
     local answer
-    read -r -p "$2${3:+ [$3]}: " answer || true
+    IFS= read -r -p "$2${3:+ [$3]}: " answer || true
     printf -v "$1" '%s' "${answer:-${3:-}}"
     [ -n "${!1}" ] || die "$2 is required"
 }
-# secret VAR QUESTION [DEFAULT]  like prompt, without echo
+# secret VAR QUESTION [DEFAULT]  like prompt, without echo; keeps surrounding spaces
 secret() {
     local answer
-    read -r -s -p "$2: " answer || true
+    IFS= read -rs -p "$2: " answer || true
     echo
     printf -v "$1" '%s' "${answer:-${3:-}}"
     [ -n "${!1}" ] || die "$2 is required"
 }
+# esc TEXT  escape TEXT for use inside a double-quoted neomutt string
+esc() {
+    local t=${1//\\/\\\\}
+    t=${t//\"/\\\"}
+    t=${t//\$/\\\$}
+    t=${t//\`/\\\`}
+    printf '%s' "$t"
+}
+# shq TEXT  single-quote TEXT for a shell command
+shq() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+valid_host() { [[ $1 =~ ^[A-Za-z0-9.-]+$ ]]; }
+valid_port() { [[ $1 =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
+
+# usable_fpr: fingerprint of the first secret key that is neither expired,
+# revoked nor disabled and can encrypt
+usable_fpr() {
+    gpg --list-secret-keys --with-colons 2> /dev/null | awk -F: '
+        $1 == "sec" { ok = ($2 !~ /^[erd]/ && $12 ~ /[eE]/) }
+        $1 == "fpr" && ok { print $10; exit }'
+}
 
 [ -f "$dir/accounts.rc" ] || die "no $dir/accounts.rc; run the dotfiles installer with neomutt first"
 
-if ! gpg --list-secret-keys --with-colons 2> /dev/null | grep -q '^sec'; then
-    echo "No GPG key found. One is needed to encrypt mail passwords."
+recipient=$(usable_fpr)
+if [ -z "$recipient" ]; then
+    echo "No usable GPG key found. One is needed to encrypt mail passwords."
     prompt create "Create one now? (y/n)" y
     [[ $create == [Yy]* ]] || exit 1
     prompt keyname "Name for the key" "$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
+    [[ $keyname != *[\<\>]* ]] || die "key name must not contain < or >"
     prompt keymail "Email for the key"
+    [[ $keymail =~ ^[^[:space:]@\<\>]+@[^[:space:]@\<\>]+$ ]] || die "not an email address: $keymail"
     gpg --quick-generate-key "$keyname <$keymail>" default default never
+    recipient=$(usable_fpr)
+    [ -n "$recipient" ] || die "no usable GPG key after creating one"
 fi
-recipient=$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')
 
 prompt name "Short account name (letters, digits, - or _)"
 [[ $name =~ ^[A-Za-z0-9_-]+$ ]] || die "bad account name: $name"
@@ -43,10 +67,14 @@ prompt name "Short account name (letters, digits, - or _)"
 prompt from "From address"
 prompt realname "Your name" "$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
 prompt imap_host "IMAP server"
+valid_host "$imap_host" || die "bad IMAP server name: $imap_host"
 prompt imap_port "IMAP port" 993
+valid_port "$imap_port" || die "bad IMAP port: $imap_port"
 prompt imap_user "IMAP user" "$from"
 prompt smtp_host "SMTP server"
+valid_host "$smtp_host" || die "bad SMTP server name: $smtp_host"
 prompt smtp_port "SMTP port (465 = TLS, 587 = STARTTLS)" 465
+valid_port "$smtp_port" || die "bad SMTP port: $smtp_port"
 prompt smtp_user "SMTP user" "$imap_user"
 secret imap_pass "IMAP password"
 secret smtp_pass "SMTP password (Enter = same as IMAP)" "$imap_pass"
@@ -58,17 +86,22 @@ umask 077
 printf '%s' "$imap_pass" | gpg --batch --yes --quiet -e -r "$recipient" -o "$dir/pass.$name.imap.gpg"
 printf '%s' "$smtp_pass" | gpg --batch --yes --quiet -e -r "$recipient" -o "$dir/pass.$name.smtp.gpg"
 
+q_from=$(esc "$from") q_realname=$(esc "$realname")
+q_imap_user=$(esc "$imap_user") q_smtp_user=$(esc "$smtp_user")
+q_imap_cmd=$(esc "gpg --batch -dq $(shq "$dir/pass.$name.imap.gpg")")
+q_smtp_cmd=$(esc "gpg --batch -dq $(shq "$dir/pass.$name.smtp.gpg")")
+
 cat > "$dir/account.$name" << EOT
 # $name: written by mail-account-add
-set from = "$from"
-set realname = "$realname"
+set from = "$q_from"
+set realname = "$q_realname"
 
-set imap_user = "$imap_user"
-set imap_pass = "\`gpg --batch -dq $dir/pass.$name.imap.gpg\`"
+set imap_user = "$q_imap_user"
+set imap_pass = "\`$q_imap_cmd\`"
 set folder = "imaps://$imap_host:$imap_port/"
 
-set smtp_user = "$smtp_user"
-set smtp_pass = "\`gpg --batch -dq $dir/pass.$name.smtp.gpg\`"
+set smtp_user = "$q_smtp_user"
+set smtp_pass = "\`$q_smtp_cmd\`"
 set smtp_url = "$smtp_scheme://$smtp_host:$smtp_port/"
 
 set ssl_starttls = yes
@@ -84,14 +117,18 @@ set message_cachedir = "\$XDG_CACHE_HOME/neomutt/bodies.$name"
 set certificate_file = "\$XDG_CACHE_HOME/neomutt/certificates.$name"
 EOT
 
+macro_written=
 key=$(($(grep -c '^macro index <f' "$dir/accounts.rc" || true) + 2))
 {
     # shellcheck disable=SC2016
     printf '\nsource "$XDG_CONFIG_HOME/neomutt/account.%s"\n' "$name"
     printf "folder-hook \$folder 'source \"\$XDG_CONFIG_HOME/neomutt/account.%s\"'\n" "$name"
     if [ "$key" -le 12 ]; then
+        macro_written=1
         printf "macro index <f%s> '<sync-mailbox><enter-command>source \"\$XDG_CONFIG_HOME/neomutt/account.%s\"<enter><change-folder>!<enter>'\n" "$key" "$name"
     fi
 } >> "$dir/accounts.rc"
 
-echo "Added $name. Start neomutt to check it; F$key switches to it."
+msg="Added $name. Start neomutt to check it"
+[ -z "$macro_written" ] || msg="$msg; F$key switches to it"
+echo "$msg."

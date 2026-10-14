@@ -35,9 +35,26 @@ expect "sourced from accounts.rc" grep -qx "source \"\$XDG_CONFIG_HOME/neomutt/a
 expect "F2 switches to it" grep -q '^macro index <f2> .*account.work' "$d/accounts.rc"
 add home > /dev/null 2>&1
 expect "second account gets F3" grep -q '^macro index <f3> .*account.home' "$d/accounts.rc"
-expect "duplicate name refused" bash -c "! (printf 'work\n' | '$here/bin/mail-account-add') 2>/dev/null"
-expect "bad name refused" bash -c "! (printf 'a b\n' | '$here/bin/mail-account-add') 2>/dev/null"
+expect "duplicate name refused" bash -c "[[ \"\$(printf 'work\n' | '$here/bin/mail-account-add' 2>&1 >/dev/null)\" == *'already exists'* ]]"
+expect "bad name refused" bash -c "[[ \"\$(printf 'a b\n' | '$here/bin/mail-account-add' 2>&1 >/dev/null)\" == *'bad account name'* ]]"
+expect "path-like name refused" bash -c "[[ \"\$(printf '../x\n' | '$here/bin/mail-account-add' 2>&1 >/dev/null)\" == *'bad account name'* ]]"
+expect "bad IMAP host refused" bash -c "[[ \"\$(printf 'h1\nme@example.com\nMe\nbad host\n' | '$here/bin/mail-account-add' 2>&1 >/dev/null)\" == *'bad IMAP server'* ]]"
+expect "bad IMAP port refused" bash -c "[[ \"\$(printf 'h2\nme@example.com\nMe\nimap.example.com\n99999\n' | '$here/bin/mail-account-add' 2>&1 >/dev/null)\" == *'bad IMAP port'* ]]"
+expect "refused names leave no account file" bash -c "! ls '$d'/account.h1 '$d'/account.h2 '$d'/account.a* 2>/dev/null"
+
+# awkward values: quote, dollar, backtick, backslash; password with surrounding spaces
+# shellcheck disable=SC2016
+tricky='Q"uo $HOME `touch '"$T"'/pwned` back\\slash'
+printf '%s\n' tricky "me@example.com" "$tricky" "imap.example.com" "" "" "smtp.example.com" "" "" "  pw  " "" |
+    "$here/bin/mail-account-add" > /dev/null 2>&1 || { echo "FAIL tricky add"; fail=1; }
+# shellcheck disable=SC2016
+expect "realname escaped in file" grep -qxF 'set realname = "Q\"uo \$HOME \`touch '"$T"'/pwned\` back\\\\slash"' "$d/account.tricky"
+expect "password keeps surrounding spaces" bash -c "[ \"\$(gpg --batch -dq '$d/pass.tricky.imap.gpg')\" = '  pw  ' ]"
+expect "gpg command quotes the config path" grep -q "gpg --batch -dq '$d/pass.tricky.imap.gpg'" "$d/account.tricky"
 if command -v neomutt > /dev/null; then
+    # neomutt prints the value back re-escaped (quote and backslashes doubled); $ and ` stay literal
+    expect "neomutt returns the tricky realname literally" bash -c "timeout 20 neomutt -n -F '$d/account.tricky' -Q realname < /dev/null | grep -qxF 'set real_name = \"Q\\\"uo \$HOME \`touch $T/pwned\` back\\\\\\\\slash\"'"
+    expect "tricky account did not run the backtick" test ! -e "$T/pwned"
     expect "neomutt reads the account file" bash -c "timeout 20 neomutt -n -F '$d/account.work' -Q imap_user < /dev/null"
 fi
 exit $fail
