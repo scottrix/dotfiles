@@ -9,6 +9,8 @@ swayidle
 swaylock
 mako
 libnotify           # notify-send
+dconf               # stores gsettings (middle-click paste)
+gsettings-desktop-schemas
 grim
 slurp
 wl-clipboard

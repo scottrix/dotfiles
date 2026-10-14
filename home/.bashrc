@@ -10,6 +10,6 @@ export GPG_TTY
 [ -f ~/.gpgagentrc ] && . ~/.gpgagentrc
 
 # podman stands in for docker
-export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
+export DOCKER_HOST=unix://${XDG_RUNTIME_DIR:-/run/user/$UID}/podman/podman.sock
 
 [ -f ~/.bashrc.local ] && . ~/.bashrc.local
