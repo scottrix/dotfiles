@@ -33,8 +33,12 @@ backup() {
     local path=$1 rel
     [ -e "$path" ] || [ -L "$path" ] || return 0
     rel=${path#"$HOME"/}
-    run mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
-    run mv "$path" "$BACKUP_DIR/$rel"
+    if [ "$DRY_RUN" = 1 ]; then
+        say "[dry-run] would back up $path to $BACKUP_DIR/$rel"
+        return 0
+    fi
+    mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
+    mv "$path" "$BACKUP_DIR/$rel"
     say "backed up $path"
 }
 
@@ -46,8 +50,12 @@ link() {
         return 0
     fi
     backup "$dest"
-    run mkdir -p "$(dirname "$dest")"
-    run ln -s "$src" "$dest"
+    if [ "$DRY_RUN" = 1 ]; then
+        say "[dry-run] would link $dest -> $src"
+        return 0
+    fi
+    mkdir -p "$(dirname "$dest")"
+    ln -s "$src" "$dest"
     say "linked $dest"
 }
 
@@ -62,7 +70,7 @@ put() {
     fi
     backup "$dest"
     if [ "$DRY_RUN" = 1 ]; then
-        say "[dry-run] write $dest"
+        say "[dry-run] would write $dest"
         rm -f "$tmp"
         return 0
     fi
@@ -81,7 +89,11 @@ render() {
 sys_backup() {
     [ -e "$1" ] || return 0
     sudo test -e "$1.dotfiles-bak" && return 0
-    srun cp -a "$1" "$1.dotfiles-bak"
+    if [ "$DRY_RUN" = 1 ]; then
+        say "[dry-run] would back up $1 to $1.dotfiles-bak"
+        return 0
+    fi
+    sudo cp -a "$1" "$1.dotfiles-bak"
 }
 
 # sys_put FILE [MODE] < CONTENT  write a system file when its content changes
@@ -94,7 +106,12 @@ sys_put() {
         return 0
     fi
     sys_backup "$dest"
-    srun install -D -m "$mode" "$tmp" "$dest"
+    if [ "$DRY_RUN" = 1 ]; then
+        say "[dry-run] would write $dest"
+        rm -f "$tmp"
+        return 0
+    fi
+    sudo install -D -m "$mode" "$tmp" "$dest"
     rm -f "$tmp"
     say "wrote $dest"
 }
@@ -104,7 +121,7 @@ sys_line() {
     sudo grep -qxF -- "$2" "$1" 2> /dev/null && return 0
     sys_backup "$1"
     if [ "$DRY_RUN" = 1 ]; then
-        say "[dry-run] add '$2' to $1"
+        say "[dry-run] would add '$2' to $1"
         return 0
     fi
     printf '%s\n' "$2" | sudo tee -a "$1" > /dev/null

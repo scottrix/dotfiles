@@ -63,6 +63,34 @@ EOF
     chmod +x "$T/bin/rc-update" "$T/bin/sudo"
     export PATH="$T/bin:$PATH"
 }
+# Fake sudo that runs its command, for the system-file helpers.
+fake_sudo() {
+    mkdir -p "$T/bin"
+    printf '#!/bin/sh\nexec "$@"\n' > "$T/bin/sudo"
+    chmod +x "$T/bin/sudo"
+    export PATH="$T/bin:$PATH"
+}
+# A dry run says what it would do and never prints the words that report a real change.
+dry_run_says_would() {
+    fake_sudo
+    echo mine > "$HOME/x"; echo old > "$T/sys"
+    out=$(
+        export DRY_RUN=1
+        link home/a "$HOME/x"
+        echo new | put "$HOME/x"
+        backup "$HOME/x"
+        echo new | sys_put "$T/sys"
+        echo new | sys_put "$T/sys2"
+        sys_line "$T/sys" 'a line'
+    )
+    printf '%s\n' "$out"
+    [ "$(cat "$HOME/x")" = mine ] && [ "$(cat "$T/sys")" = old ] && [ ! -e "$T/sys2" ] &&
+        [ ! -e "$T/sys.dotfiles-bak" ] && [ ! -e "$BACKUP_DIR" ] &&
+        ! grep -Eq 'linked|wrote|backed up|added' <<< "$out" &&
+        [ "$(grep -c '^    \[dry-run\] would ' <<< "$out")" = "$(wc -l <<< "$out")" ] &&
+        grep -q "would link $HOME/x" <<< "$out" && grep -q "would write $T/sys2" <<< "$out" &&
+        grep -q "would back up $HOME/x" <<< "$out" && grep -q "would back up $T/sys to $T/sys.dotfiles-bak" <<< "$out"
+}
 svc_add_enables_missing() { fake_openrc; svc_add net default; grep -qx 'rc-update add net default' "$T/sudo.log"; }
 svc_add_skips_enabled() { fake_openrc; svc_add sshd default; [ ! -e "$T/sudo.log" ]; }
 
@@ -78,6 +106,7 @@ t "render substitutes only named vars" render_only_named_vars
 t "pkgs_from strips comments and blanks" pkgs_from_strips_comments
 t "pkgs_from on an empty list" pkgs_from_empty_list_ok
 t "warn records the warning" warn_records
+t "dry run prints only '[dry-run] would ...'" dry_run_says_would
 t "svc_add enables a service whose name prefixes an enabled one" svc_add_enables_missing
 t "svc_add skips an already enabled service" svc_add_skips_enabled
 exit $fail
