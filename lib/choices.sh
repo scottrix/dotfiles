@@ -56,7 +56,7 @@ resolve_choices() {
     case $BROWSER in
         firefox) BROWSER_PKG=firefox BROWSER_FROM=repo BROWSER_CMD=firefox BROWSER_ID=firefox BROWSER_LABEL=Firefox ;;
         chrome) BROWSER_PKG=google-chrome BROWSER_FROM=aur BROWSER_CMD=google-chrome-stable BROWSER_ID=google-chrome BROWSER_LABEL=Chrome ;;
-        librewolf) BROWSER_PKG=librewolf-bin BROWSER_FROM=aur BROWSER_CMD=librewolf BROWSER_ID=librewolf BROWSER_LABEL=LibreWolf ;;
+        librewolf) BROWSER_PKG=librewolf BROWSER_FROM=repo BROWSER_CMD=librewolf BROWSER_ID=librewolf BROWSER_LABEL=LibreWolf ;;
         *) die "unknown browser '$BROWSER' (choose: $BROWSERS)" ;;
     esac
     case $MAIL in

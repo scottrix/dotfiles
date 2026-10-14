@@ -47,6 +47,10 @@ resolve_chrome() {
     [ "$BROWSER_PKG $BROWSER_FROM $BROWSER_CMD $BROWSER_ID" = "google-chrome aur google-chrome-stable google-chrome" ] &&
         [ "$MAIL_CMD|$MAIL_ID" = "foot --app-id=mail neomutt|mail" ]
 }
+resolve_librewolf() {
+    BROWSER=librewolf MAIL=none KB_LAYOUT=gb; resolve_choices
+    [ "$BROWSER_PKG $BROWSER_FROM $BROWSER_CMD $BROWSER_ID" = "librewolf repo librewolf librewolf" ]
+}
 resolve_none_mail() { BROWSER=firefox MAIL=none KB_LAYOUT=gb; resolve_choices; [ -z "$MAIL_CMD$MAIL_ID" ]; }
 resolve_rejects_unknown() { BROWSER=opera MAIL=none KB_LAYOUT=gb; ! ( resolve_choices ) 2>/dev/null; }
 
@@ -59,6 +63,7 @@ t "ask re-prompts on a bad answer" ask_reprompts_on_bad_answer
 t "ask: no terminal (EOF) keeps the current value" ask_eof_keeps_current
 t "ask with --yes doesn't read" ask_yes_does_not_read
 t "resolve chrome + neomutt" resolve_chrome
+t "resolve librewolf from the repo" resolve_librewolf
 t "resolve mail=none" resolve_none_mail
 t "resolve rejects an unknown browser" resolve_rejects_unknown
 exit $fail
