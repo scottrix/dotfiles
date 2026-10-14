@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Run steps/50-desktop.sh into a temp home and check the result.
+# shellcheck disable=SC2317  # block functions are invoked indirectly via block()
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 fail=0
@@ -17,14 +18,28 @@ run_step() {  # run_step BROWSER MAIL
     bash "$here/steps/50-desktop.sh" > /dev/null
 }
 
-expect() {  # expect NAME CMD...
+expect() {  # expect NAME CMD...  a failed check is reported and recorded; the block goes on
     local name=$1; shift
     if "$@" > /dev/null 2>&1; then echo "ok   $name"; else echo "FAIL $name"; fail=1; fi
 }
 
-(
+# block NAME FUNC  run FUNC in a subshell under set -e: any failing command
+# (not an expect) stops it, and a failed expect inside it fails the test
+block() {
+    local rc
+    set +e
+    ( set -e; fail=0; "$2"; exit "$fail" )
+    rc=$?
+    set -e
+    if [ "$rc" != 0 ]; then
+        echo "FAIL $1 (block exited $rc)"
+        fail=1
+    fi
+}
+
+chrome_neomutt() {
     run_step chrome neomutt
-    bash "$here/tests/check-installed.sh" desktop
+    bash "$here/tests/check-installed.sh" desktop || fail=1
     c=$HOME/.config
     expect "chrome rule on Web" grep -Pzq 'identifier="google-chrome" matchOnce="true">\s*<action name="SendToDesktop" to="2"' "$c/labwc/rc.xml"
     expect "mail rule on Mail" grep -Pzq 'identifier="mail" matchOnce="true">\s*<action name="SendToDesktop" to="3"' "$c/labwc/rc.xml"
@@ -33,15 +48,17 @@ expect() {  # expect NAME CMD...
     expect "menu has Chrome" grep -q '<item label="Chrome">' "$c/labwc/menu.xml"
     expect "keyboard layout" grep -qx 'XKB_DEFAULT_LAYOUT=gb' "$c/labwc/environment"
     expect "re-run changes nothing" bash -c "bash '$here/steps/50-desktop.sh' | grep -q . && exit 1 || exit 0"
-) || fail=1
+}
 
-(
+firefox_none() {
     run_step firefox none
     c=$HOME/.config
     expect "no mail rule" bash -c "! grep -q 'identifier=\"mail\"' '$c/labwc/rc.xml'"
     expect "no mail in startup" bash -c "! grep -q neomutt '$HOME/bin/labwc_startup'"
     expect "no Mail menu item" bash -c "! grep -q 'label=\"Mail\"' '$c/labwc/menu.xml'"
     expect "rc.xml still valid" xmllint --noout "$c/labwc/rc.xml"
-) || fail=1
+}
 
+block "chrome + neomutt" chrome_neomutt
+block "firefox + none" firefox_none
 exit $fail
