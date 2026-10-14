@@ -3,6 +3,14 @@
 set -euo pipefail
 # shellcheck source=lib/common.sh
 . "$DOTFILES_DIR/lib/common.sh"
+# shellcheck source=lib/choices.sh
+. "$DOTFILES_DIR/lib/choices.sh"
+
+# The questions are asked before 20-packages installs the XKB layout list, so
+# a typo (uk for gb) can only be caught now; labwc would fall back to us.
+if [ -f "$XKB_RULES" ] && ! valid_layout "$KB_LAYOUT"; then
+    warn "keyboard layout '$KB_LAYOUT' isn't in the XKB layout list ($XKB_RULES, section '! layout'), so the desktop and login screen fall back to us. Run $DOTFILES_DIR/install --from 40-session and give a layout from that list when asked (DF_KB_LAYOUT=... also works with --yes)"
+fi
 
 # first wired interface, for waybar's ethernet module
 first_ethernet() {

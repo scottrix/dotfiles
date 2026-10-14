@@ -59,6 +59,22 @@ firefox_none() {
     expect "rc.xml still valid" xmllint --noout "$c/labwc/rc.xml"
 }
 
+# the layout list only exists once 20-packages has run, so 50-desktop checks the answer again
+unknown_layout_warned() {
+    local rules
+    rules=$(mktemp)
+    printf '! layout\n  us   English (US)\n  de   German\n\n! variant\n  gb  us: not a layout\n' > "$rules"
+    export XKB_RULES=$rules
+    run_step firefox none
+    expect "unknown layout is warned about" grep -q "keyboard layout 'gb' isn't in the XKB layout list" "$WARNINGS_FILE"
+    expect "warning says how to fix it" grep -q 'install --from 40-session' "$WARNINGS_FILE"
+    printf '! layout\n  gb   English (UK)\n' > "$rules"
+    rm -f "$WARNINGS_FILE"
+    bash "$here/steps/50-desktop.sh" > /dev/null
+    expect "known layout: no warning" test ! -s "$WARNINGS_FILE"
+}
+
 block "chrome + neomutt" chrome_neomutt
 block "firefox + none" firefox_none
+block "layout checked against the installed XKB list" unknown_layout_warned
 exit $fail
