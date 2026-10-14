@@ -1,9 +1,9 @@
 # vim: filetype=muttrc
 # from github.com/scottrix/dotfiles; accounts live in accounts.rc (add them with mail-account-add)
-source "$XDG_CONFIG_HOME/neomutt/settings"
-source "$XDG_CONFIG_HOME/neomutt/colours"
+source "~/.config/neomutt/settings"
+source "~/.config/neomutt/colours"
 
-set alias_file = "$XDG_CONFIG_HOME/neomutt/alias"
-source "$XDG_CONFIG_HOME/neomutt/alias"
+set alias_file = "~/.config/neomutt/alias"
+source "~/.config/neomutt/alias"
 
-source "$XDG_CONFIG_HOME/neomutt/accounts.rc"
+source "~/.config/neomutt/accounts.rc"

@@ -31,7 +31,8 @@ expect "imap password is not in plain text" bash -c "! grep -rq imap-pw '$d'"
 expect "imap password decrypts" bash -c "[ \"\$(gpg --batch -dq '$d/pass.work.imap.gpg')\" = imap-pw ]"
 expect "smtp password defaults to imap" bash -c "[ \"\$(gpg --batch -dq '$d/pass.work.smtp.gpg')\" = imap-pw ]"
 expect "account file mode 600" test "$(stat -c %a "$d/account.work")" = 600
-expect "sourced from accounts.rc" grep -qx "source \"\$XDG_CONFIG_HOME/neomutt/account.work\"" "$d/accounts.rc"
+expect "sourced from accounts.rc" grep -qx 'source "~/.config/neomutt/account.work"' "$d/accounts.rc"
+expect "no XDG variables in what it writes" bash -c "! grep -q XDG_ '$d/accounts.rc' '$d/account.work'"
 expect "F2 switches to it" grep -q '^macro index <f2> .*account.work' "$d/accounts.rc"
 add home > /dev/null 2>&1
 expect "second account gets F3" grep -q '^macro index <f3> .*account.home' "$d/accounts.rc"
@@ -56,5 +57,10 @@ if command -v neomutt > /dev/null; then
     expect "neomutt returns the tricky realname literally" bash -c "timeout 20 neomutt -n -F '$d/account.tricky' -Q realname < /dev/null | grep -qxF 'set real_name = \"Q\\\"uo \$HOME \`touch $T/pwned\` back\\\\\\\\slash\"'"
     expect "tricky account did not run the backtick" test ! -e "$T/pwned"
     expect "neomutt reads the account file" bash -c "timeout 20 neomutt -n -F '$d/account.work' -Q imap_user < /dev/null"
+    # neomutt started without ~/.profile's XDG variables (ssh host neomutt, a bare session)
+    expect "accounts.rc works without XDG_CONFIG_HOME" bash -c "timeout 20 env -u XDG_CONFIG_HOME -u XDG_CACHE_HOME neomutt -n -F '$d/accounts.rc' -Q header_cache < /dev/null | grep -qxF 'set header_cache = \"~/.cache/neomutt/headers.tricky\"'"
+    cp "$here/home/.config/neomutt/neomuttrc" "$here/home/.config/neomutt/settings" "$here/home/.config/neomutt/colours" "$d/"
+    touch "$d/alias"
+    expect "neomuttrc works without XDG_CONFIG_HOME" bash -c "timeout 20 env -u XDG_CONFIG_HOME -u XDG_CACHE_HOME neomutt -n -F '$d/neomuttrc' -Q mailcap_path < /dev/null | grep -qxF 'set mailcap_path = \"~/.config/neomutt/mailcap\"'"
 fi
 exit $fail

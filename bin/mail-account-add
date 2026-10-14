@@ -6,7 +6,8 @@
 # shellcheck disable=SC2154  # prompt/secret assign their variables through printf -v
 set -euo pipefail
 
-dir=${XDG_CONFIG_HOME:-$HOME/.config}/neomutt
+# the same directory neomuttrc and accounts.rc name as ~/.config/neomutt
+dir=$HOME/.config/neomutt
 die() { printf 'mail-account-add: %s\n' "$*" >&2; exit 1; }
 
 # prompt VAR QUESTION [DEFAULT]
@@ -112,20 +113,20 @@ set postponed = "+Drafts"
 set record = "+Sent"
 set trash = "+Trash"
 
-set header_cache = "\$XDG_CACHE_HOME/neomutt/headers.$name"
-set message_cachedir = "\$XDG_CACHE_HOME/neomutt/bodies.$name"
-set certificate_file = "\$XDG_CACHE_HOME/neomutt/certificates.$name"
+set header_cache = "~/.cache/neomutt/headers.$name"
+set message_cachedir = "~/.cache/neomutt/bodies.$name"
+set certificate_file = "~/.cache/neomutt/certificates.$name"
 EOT
 
 macro_written=
 key=$(($(grep -c '^macro index <f' "$dir/accounts.rc" || true) + 2))
 {
     # shellcheck disable=SC2016
-    printf '\nsource "$XDG_CONFIG_HOME/neomutt/account.%s"\n' "$name"
-    printf "folder-hook \$folder 'source \"\$XDG_CONFIG_HOME/neomutt/account.%s\"'\n" "$name"
+    printf '\nsource "~/.config/neomutt/account.%s"\n' "$name"
+    printf "folder-hook \$folder 'source \"~/.config/neomutt/account.%s\"'\n" "$name"
     if [ "$key" -le 12 ]; then
         macro_written=1
-        printf "macro index <f%s> '<sync-mailbox><enter-command>source \"\$XDG_CONFIG_HOME/neomutt/account.%s\"<enter><change-folder>!<enter>'\n" "$key" "$name"
+        printf "macro index <f%s> '<sync-mailbox><enter-command>source \"~/.config/neomutt/account.%s\"<enter><change-folder>!<enter>'\n" "$key" "$name"
     fi
 } >> "$dir/accounts.rc"
 

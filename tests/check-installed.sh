@@ -57,7 +57,7 @@ mail() {
     done
     check "mail-account-add is executable" test -x "$HOME/bin/mail-account-add"
     if needs neomutt "neomutt check"; then
-        check "neomuttrc loads" bash -c "XDG_CONFIG_HOME='$c' neomutt -n -F '$c/neomutt/neomuttrc' -Q editor < /dev/null"
+        check "neomuttrc loads" bash -c "env -u XDG_CONFIG_HOME -u XDG_CACHE_HOME neomutt -n -F '$c/neomutt/neomuttrc' -Q editor < /dev/null"
     fi
 }
 

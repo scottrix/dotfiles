@@ -65,7 +65,7 @@ set tmpdir="/tmp"
 set ascii_chars
 set crypt_use_gpgme=yes
 
-set mailcap_path        = "$XDG_CONFIG_HOME/neomutt/mailcap"
+set mailcap_path        = "~/.config/neomutt/mailcap"
 auto_view text/html
 alternative_order text/plain text/html
 
