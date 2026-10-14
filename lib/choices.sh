@@ -3,6 +3,7 @@
 
 BROWSERS="firefox chrome librewolf"
 MAILERS="neomutt thunderbird none"
+XKB_RULES=${XKB_RULES:-/usr/share/X11/xkb/rules/evdev.lst}
 
 # load_choices FILE  defaults, then saved answers, then DF_* environment overrides
 load_choices() {
@@ -38,12 +39,36 @@ ask() {
     done
 }
 
+# valid_layout LAYOUT  one or more comma-separated XKB layouts (gb, gb,us), each
+# listed in the '! layout' section of XKB_RULES when that file exists
+valid_layout() {
+    [[ $1 =~ ^[^,[:space:]]+(,[^,[:space:]]+)*$ ]] || return 1
+    [ -f "$XKB_RULES" ] || return 0
+    local l parts
+    IFS=, read -ra parts <<< "$1"
+    for l in "${parts[@]}"; do
+        awk -v l="$l" '/^!/ { s = ($2 == "layout"); next } s && $1 == l { f = 1 } END { exit !f }' "$XKB_RULES" ||
+            return 1
+    done
+}
+
 ask_choices() {
     # shellcheck disable=SC2086
     ask BROWSER "Browser" $BROWSERS
     # shellcheck disable=SC2086
     ask MAIL "Mail client" $MAILERS
-    ask KB_LAYOUT "Keyboard layout"
+    # a typo (uk for gb) would make labwc fall back to us without a word
+    local good=$KB_LAYOUT tries
+    valid_layout "$good" || good=gb
+    for ((tries = 1; ; tries++)); do
+        ask KB_LAYOUT "Keyboard layout"
+        valid_layout "$KB_LAYOUT" && return 0
+        if [ "${ASSUME_YES:-0}" = 1 ] || [ "$tries" -ge 5 ]; then
+            die "keyboard layout '$KB_LAYOUT' isn't a known XKB layout (see the '! layout' section of $XKB_RULES); answer the question, or set DF_KB_LAYOUT"
+        fi
+        echo "  '$KB_LAYOUT' isn't a known XKB layout; try e.g. gb, us or de"
+        KB_LAYOUT=$good
+    done
 }
 
 save_choices() {

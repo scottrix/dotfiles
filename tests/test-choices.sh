@@ -9,7 +9,8 @@ log=$(mktemp)
 
 setup() {
     T=$(mktemp -d)
-    export HOME=$T ASSUME_YES=0
+    export HOME=$T ASSUME_YES=0 XKB_RULES=$T/evdev.lst
+    printf '! model\n  pc105  Generic 105-key PC\n\n! layout\n  us   English (US)\n  gb   English (UK)\n  de   German\n\n! variant\n  intl  us: English (US, intl.)\n' > "$XKB_RULES"
     unset DF_BROWSER DF_MAIL DF_KB_LAYOUT
     # shellcheck source=lib/common.sh
     . "$here/lib/common.sh"
@@ -53,6 +54,25 @@ resolve_librewolf() {
 }
 resolve_none_mail() { BROWSER=firefox MAIL=none KB_LAYOUT=gb; resolve_choices; [ -z "$MAIL_CMD$MAIL_ID" ]; }
 resolve_rejects_unknown() { BROWSER=opera MAIL=none KB_LAYOUT=gb; ! ( resolve_choices ) 2>/dev/null; }
+layout_known() { valid_layout gb && valid_layout gb,us; }
+layout_unknown() { ! valid_layout uk && ! valid_layout intl && ! valid_layout pc105 && ! valid_layout 'gb,uk'; }
+layout_empty() { ! valid_layout '' && ! valid_layout ',' && ! valid_layout 'gb,' && ! valid_layout 'us intl'; }
+layout_no_rules_file() { XKB_RULES=$T/missing; valid_layout anything && ! valid_layout ''; }
+ask_layout_reprompts() {
+    load_choices "$T/none"
+    printf 'firefox\nneomutt\nuk\nde\n' | { ask_choices; [ "$KB_LAYOUT" = de ]; }
+}
+ask_layout_eof_after_bad_keeps_valid() {
+    load_choices "$T/none"; KB_LAYOUT=us
+    printf '\n\nuk\n' | { ask_choices; [ "$KB_LAYOUT" = us ]; }
+}
+yes_bad_layout_dies() {
+    ASSUME_YES=1
+    load_choices "$T/none"; KB_LAYOUT=uk
+    out=$( (ask_choices) 2>&1) && return 1
+    grep -q "keyboard layout 'uk'" <<< "$out"
+}
+yes_empty_layout_dies() { ASSUME_YES=1; load_choices "$T/none"; KB_LAYOUT=''; ! (ask_choices) 2> /dev/null; }
 
 t "defaults" defaults
 t "saved answers round-trip" saved_round_trip
@@ -66,4 +86,12 @@ t "resolve chrome + neomutt" resolve_chrome
 t "resolve librewolf from the repo" resolve_librewolf
 t "resolve mail=none" resolve_none_mail
 t "resolve rejects an unknown browser" resolve_rejects_unknown
+t "layout in the XKB list is valid (also as a list)" layout_known
+t "layout not in the XKB layout list is invalid" layout_unknown
+t "empty layout is invalid" layout_empty
+t "without an XKB list any non-empty layout is valid" layout_no_rules_file
+t "ask re-asks for an unknown layout" ask_layout_reprompts
+t "unknown layout then EOF keeps the last valid one" ask_layout_eof_after_bad_keeps_valid
+t "--yes with an unknown layout stops with a clear error" yes_bad_layout_dies
+t "--yes with an empty layout stops" yes_empty_layout_dies
 exit $fail
