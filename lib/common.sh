@@ -124,6 +124,10 @@ sys_line() {
         say "[dry-run] would add '$2' to $1"
         return 0
     fi
+    # a file without a final newline would get LINE glued onto its last line
+    if [ -n "$(sudo tail -c1 "$1" 2> /dev/null)" ]; then
+        printf '\n' | sudo tee -a "$1" > /dev/null
+    fi
     printf '%s\n' "$2" | sudo tee -a "$1" > /dev/null
     say "added '$2' to $1"
 }

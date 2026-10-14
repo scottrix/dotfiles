@@ -91,6 +91,20 @@ dry_run_says_would() {
         grep -q "would link $HOME/x" <<< "$out" && grep -q "would write $T/sys2" <<< "$out" &&
         grep -q "would back up $HOME/x" <<< "$out" && grep -q "would back up $T/sys to $T/sys.dotfiles-bak" <<< "$out"
 }
+sys_line_after_missing_newline() {
+    fake_sudo
+    printf 'option ntp_servers' > "$T/conf"
+    sys_line "$T/conf" 'denyinterfaces wlan*'
+    sys_line "$T/conf" 'denyinterfaces wlan*'
+    [ "$(cat "$T/conf")" = "$(printf 'option ntp_servers\ndenyinterfaces wlan*')" ] &&
+        [ "$(tail -c1 "$T/conf" | od -An -c | tr -d ' ')" = '\n' ]
+}
+sys_line_appends_once() {
+    fake_sudo
+    printf 'a\n' > "$T/conf"
+    sys_line "$T/conf" b; sys_line "$T/conf" b
+    [ "$(cat "$T/conf")" = "$(printf 'a\nb')" ] && [ "$(cat "$T/conf.dotfiles-bak")" = a ]
+}
 svc_add_enables_missing() { fake_openrc; svc_add net default; grep -qx 'rc-update add net default' "$T/sudo.log"; }
 svc_add_skips_enabled() { fake_openrc; svc_add sshd default; [ ! -e "$T/sudo.log" ]; }
 
@@ -107,6 +121,8 @@ t "pkgs_from strips comments and blanks" pkgs_from_strips_comments
 t "pkgs_from on an empty list" pkgs_from_empty_list_ok
 t "warn records the warning" warn_records
 t "dry run prints only '[dry-run] would ...'" dry_run_says_would
+t "sys_line starts a new line when the file lacks a final newline" sys_line_after_missing_newline
+t "sys_line appends once and keeps the original" sys_line_appends_once
 t "svc_add enables a service whose name prefixes an enabled one" svc_add_enables_missing
 t "svc_add skips an already enabled service" svc_add_skips_enabled
 exit $fail
