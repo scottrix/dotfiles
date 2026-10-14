@@ -48,6 +48,17 @@ warnings_in_summary() {
     out=$(inst)
     grep -q "pkg x skipped" <<< "$out"
 }
+no_tty_fifo_uses_defaults() {
+    mkfifo "$T/ff"
+    exec 7<> "$T/ff"
+    DOTFILES_NO_TTY=1 timeout 10 "$DOTFILES_DIR/install" --no-update --only 10-a <&7
+    grep -qx "ran 10-a firefox dry=0" "$HOME/ran"
+    grep -qx "MAIL=neomutt" "$DOTFILES_CHOICES" && grep -qx "KB_LAYOUT=gb" "$DOTFILES_CHOICES"
+}
+no_tty_script_text_not_answers() {
+    printf 'line one\nrm -rf x\n' | DOTFILES_NO_TTY=1 timeout 10 "$DOTFILES_DIR/install" --no-update --only 10-a
+    grep -qx "KB_LAYOUT=gb" "$DOTFILES_CHOICES"
+}
 
 t "--help" help_exits_0
 t "unknown option fails" bad_option_fails
@@ -61,4 +72,6 @@ t "--dry-run doesn't save answers" dry_run_saves_nothing
 t "answers are saved" saves_choices
 t "a failing step stops the run with a resume hint" failing_step_stops_with_hint
 t "warnings appear in the summary" warnings_in_summary
+t "no terminal and open stdin: defaults, no hang" no_tty_fifo_uses_defaults
+t "no terminal: piped script text isn't taken as answers" no_tty_script_text_not_answers
 exit $fail

@@ -13,7 +13,7 @@ CHOICES_FILE=${DOTFILES_CHOICES:-$HOME/.config/dotfiles/choices}
 usage() {
     cat << 'EOT'
 usage: install [options]
-  --dry-run      show what would change; change nothing
+  --dry-run      show what would change; changes nothing except fetching the installer itself
   --yes          don't ask; reuse saved answers (or the defaults)
   --only STEP    run one step, e.g. --only 50-desktop
   --from STEP    start at STEP and run the rest
@@ -52,16 +52,21 @@ preflight() {
     if [ -z "${DOTFILES_SUDO_LOOP:-}" ]; then
         export DOTFILES_SUDO_LOOP=1
         # keep sudo's timestamp fresh until this script (same PID after exec) exits
-        (while sleep 50; do kill -0 "$$" 2> /dev/null || exit 0; sudo -n true 2> /dev/null; done) &
+        (while sleep 50; do kill -0 "$$" 2> /dev/null || exit 0; sudo -n true 2> /dev/null; done) > /dev/null 2>&1 &
     fi
 }
 
-have_tty() { { : < /dev/tty; } 2> /dev/null; }
+have_tty() { [ "${DOTFILES_NO_TTY:-0}" != 1 ] && { : < /dev/tty; } 2> /dev/null; }
+no_tty_note() { echo "No terminal found; using saved answers or the defaults." >&2; }
 
 # Bootstrap: get the checkout up to date, then hand over to its copy of this script.
 if [ "$NO_UPDATE" = 0 ]; then
     preflight
     if ! command -v git > /dev/null || ! command -v envsubst > /dev/null; then
+        if [ "$DRY_RUN" = 1 ]; then
+            echo "dry-run would install: git gettext" >&2
+            fatal "dry-run needs git and gettext installed first"
+        fi
         sudo pacman -Syu --needed --noconfirm git gettext
     fi
     if [ -d "$DOTFILES_DIR/.git" ]; then
@@ -72,7 +77,8 @@ if [ "$NO_UPDATE" = 0 ]; then
     if have_tty; then
         exec "$DOTFILES_DIR/install" --no-update "${args[@]}" < /dev/tty
     fi
-    exec "$DOTFILES_DIR/install" --no-update "${args[@]}"
+    no_tty_note
+    exec "$DOTFILES_DIR/install" --no-update --yes "${args[@]}" < /dev/null
 fi
 
 preflight
@@ -85,6 +91,15 @@ mapfile -t steps < <(cd "$DOTFILES_DIR/steps" && for f in *.sh; do echo "${f%.sh
 for s in "$ONLY" "$FROM"; do
     [ -z "$s" ] || [ -f "$DOTFILES_DIR/steps/$s.sh" ] || die "no such step: $s (steps: ${steps[*]})"
 done
+
+if [ ! -t 0 ] && [ "$ASSUME_YES" != 1 ]; then
+    if have_tty; then
+        exec < /dev/tty
+    else
+        ASSUME_YES=1
+        no_tty_note
+    fi
+fi
 
 load_choices "$CHOICES_FILE"
 ask_choices
