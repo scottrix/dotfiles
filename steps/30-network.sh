@@ -161,7 +161,8 @@ if [ "$old" = connmand ]; then name=connman check_cmd=connmanctl; else name=wpa_
 if [ -n "$other" ]; then
     warn "$other manages the network, so iwd and dhcpcd are set up but not started or enabled. To switch by hand: stop and disable $other, then sudo rc-update add iwd default; sudo rc-update add dhcpcd default; and reboot"
 elif [ -n "$old" ]; then
-    if [ "$DRY_RUN" != 1 ] && started "$old" && ! online "$PRECHECK_TRIES"; then
+    # an unfinished switch (marker present) goes straight to switch-or-roll-back, which restarts dhcpcd
+    if [ -z "$m_old" ] && [ "$DRY_RUN" != 1 ] && started "$old" && ! online "$PRECHECK_TRIES"; then
         # the check can't work here (captive portal, proxy, blocked site), so it would roll back anyway
         allow_wifi_dhcp
         rm -f "$marker"
