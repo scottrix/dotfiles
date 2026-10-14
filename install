@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Set up Scott's labwc (Wayland) desktop on a fresh Artix Linux (OpenRC) install.
+#
+#   curl -fsSL https://raw.githubusercontent.com/scottrix/dotfiles/main/install | bash
+#   ~/.local/share/dotfiles/install [--dry-run] [--yes] [--only STEP] [--from STEP]
+set -euo pipefail
+
+REPO_URL=${DOTFILES_REPO:-https://github.com/scottrix/dotfiles.git}
+export DOTFILES_DIR=${DOTFILES_DIR:-$HOME/.local/share/dotfiles}
+export DOTFILES_STATE=${DOTFILES_STATE:-$HOME/.local/state/dotfiles}
+CHOICES_FILE=${DOTFILES_CHOICES:-$HOME/.config/dotfiles/choices}
+
+usage() {
+    cat << 'EOT'
+usage: install [options]
+  --dry-run      show what would change; change nothing
+  --yes          don't ask; reuse saved answers (or the defaults)
+  --only STEP    run one step, e.g. --only 50-desktop
+  --from STEP    start at STEP and run the rest
+  --no-update    use the existing checkout as it is (no clone or pull)
+  -h, --help     show this help
+EOT
+}
+
+args=("$@")
+DRY_RUN=0 ASSUME_YES=0 ONLY="" FROM="" NO_UPDATE=0
+while [ $# -gt 0 ]; do
+    case $1 in
+        --dry-run) DRY_RUN=1 ;;
+        --yes) ASSUME_YES=1 ;;
+        --only) ONLY=${2:?--only needs a step name}; shift ;;
+        --from) FROM=${2:?--from needs a step name}; shift ;;
+        --no-update) NO_UPDATE=1 ;;
+        -h | --help) usage; exit 0 ;;
+        *) usage >&2; exit 2 ;;
+    esac
+    shift
+done
+export DRY_RUN ASSUME_YES
+
+fatal() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+preflight() {
+    [ "${DOTFILES_SKIP_PREFLIGHT:-0}" = 1 ] && return 0
+    [ "$(id -u)" != 0 ] || fatal "run this as your normal user, not root; it uses sudo where needed"
+    grep -qi '^ID=artix' /etc/os-release 2> /dev/null || fatal "this installer is for Artix Linux"
+    if [ -d /run/systemd/system ] || ! command -v openrc > /dev/null; then
+        fatal "this installer needs Artix with OpenRC"
+    fi
+    command -v sudo > /dev/null || fatal "sudo isn't installed"
+    sudo -v || fatal "your user needs sudo access"
+    if [ -z "${DOTFILES_SUDO_LOOP:-}" ]; then
+        export DOTFILES_SUDO_LOOP=1
+        # keep sudo's timestamp fresh until this script (same PID after exec) exits
+        (while sleep 50; do kill -0 "$$" 2> /dev/null || exit 0; sudo -n true 2> /dev/null; done) &
+    fi
+}
+
+have_tty() { { : < /dev/tty; } 2> /dev/null; }
+
+# Bootstrap: get the checkout up to date, then hand over to its copy of this script.
+if [ "$NO_UPDATE" = 0 ]; then
+    preflight
+    if ! command -v git > /dev/null || ! command -v envsubst > /dev/null; then
+        sudo pacman -Syu --needed --noconfirm git gettext
+    fi
+    if [ -d "$DOTFILES_DIR/.git" ]; then
+        git -C "$DOTFILES_DIR" pull --ff-only || fatal "couldn't update $DOTFILES_DIR (local changes?)"
+    else
+        git clone "$REPO_URL" "$DOTFILES_DIR"
+    fi
+    if have_tty; then
+        exec "$DOTFILES_DIR/install" --no-update "${args[@]}" < /dev/tty
+    fi
+    exec "$DOTFILES_DIR/install" --no-update "${args[@]}"
+fi
+
+preflight
+# shellcheck source=lib/common.sh
+. "$DOTFILES_DIR/lib/common.sh"
+# shellcheck source=lib/choices.sh
+. "$DOTFILES_DIR/lib/choices.sh"
+
+mapfile -t steps < <(cd "$DOTFILES_DIR/steps" && for f in *.sh; do echo "${f%.sh}"; done)
+for s in "$ONLY" "$FROM"; do
+    [ -z "$s" ] || [ -f "$DOTFILES_DIR/steps/$s.sh" ] || die "no such step: $s (steps: ${steps[*]})"
+done
+
+load_choices "$CHOICES_FILE"
+ask_choices
+resolve_choices
+[ "$DRY_RUN" = 1 ] || save_choices "$CHOICES_FILE"
+
+BACKUP_DIR=$DOTFILES_STATE/backup/$(date +%Y%m%d-%H%M%S)
+WARNINGS_FILE=$(mktemp)
+export BACKUP_DIR WARNINGS_FILE
+
+started=0
+[ -n "$FROM" ] || started=1
+for s in "${steps[@]}"; do
+    [ "$s" = "$FROM" ] && started=1
+    [ "$started" = 1 ] || continue
+    [ -z "$ONLY" ] || [ "$s" = "$ONLY" ] || continue
+    printf '==> %s\n' "$s"
+    if bash "$DOTFILES_DIR/steps/$s.sh"; then
+        printf '    ✓ %s\n' "$s"
+    else
+        printf '    ✗ %s failed. Fix the problem above, then resume with:\n        %s --from %s\n' \
+            "$s" "$DOTFILES_DIR/install" "$s" >&2
+        exit 1
+    fi
+done
+
+echo
+echo "Done."
+if [ -s "$WARNINGS_FILE" ]; then
+    echo "Warnings:"
+    sed 's/^/  - /' "$WARNINGS_FILE"
+fi
+[ ! -d "$BACKUP_DIR" ] || echo "Files that were replaced are in $BACKUP_DIR"
+cat << EOT
+Next:
+  - reboot, then log in with the labwc session
+  - see $DOTFILES_DIR/README.md for after-install notes
+EOT
+[ "$MAIL" != neomutt ] || echo "  - add mail accounts with: mail-account-add"
+rm -f "$WARNINGS_FILE"
