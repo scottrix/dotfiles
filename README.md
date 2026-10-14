@@ -12,7 +12,9 @@ curl -fsSL https://raw.githubusercontent.com/scottrix/dotfiles/main/install | ba
 
 - A fresh Artix install with **OpenRC** and a working network connection.
 - A normal user that can use `sudo`. Passwordless sudo is optional; the installer
-  asks for your password once and keeps sudo active while it runs.
+  asks for your password once and keeps sudo active while it runs. Without a
+  terminal to ask on (for example `ssh host 'curl ... | bash'` without `-t`),
+  sudo must be passwordless.
 - Optional: a GPG key. Only `mail-account-add` needs one, and it offers to make one.
 
 ## What it asks

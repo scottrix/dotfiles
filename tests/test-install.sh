@@ -59,6 +59,33 @@ no_tty_script_text_not_answers() {
     printf 'line one\nrm -rf x\n' | DOTFILES_NO_TTY=1 timeout 10 "$DOTFILES_DIR/install" --no-update --only 10-a
     grep -qx "KB_LAYOUT=gb" "$DOTFILES_CHOICES"
 }
+# preflight with a fake Artix/OpenRC system and a fake sudo; SUDO_NEEDS_PW=1 makes sudo want a password
+fake_preflight() {
+    mkdir -p "$T/bin"
+    printf 'ID=artix\n' > "$T/os-release"
+    printf '#!/bin/sh\nexit 0\n' > "$T/bin/openrc"
+    # shellcheck disable=SC2016  # expands in the fake, not here
+    printf '#!/bin/sh\n[ -z "$SUDO_NEEDS_PW" ] || { echo "sudo: a password is required" >&2; exit 1; }\n' > "$T/bin/sudo"
+    chmod +x "$T/bin/openrc" "$T/bin/sudo"
+}
+preflight_inst() {
+    PATH="$T/bin:$PATH" DOTFILES_SKIP_PREFLIGHT=0 DOTFILES_OS_RELEASE="$T/os-release" DOTFILES_NO_TTY=1 \
+        DOTFILES_SUDO_LOOP=1 "$DOTFILES_DIR/install" --no-update --only 10-a < /dev/null
+}
+no_tty_password_sudo_explains() {
+    [ ! -d /run/systemd/system ] || { echo "skip: systemd host"; return 0; }
+    fake_preflight
+    out=$(SUDO_NEEDS_PW=1 preflight_inst 2>&1) && return 1
+    printf '%s\n' "$out"
+    grep -q 'sudo needs a password and there is no terminal: use ssh -t, or passwordless sudo' <<< "$out" &&
+        [ ! -e "$HOME/ran" ]
+}
+no_tty_passwordless_sudo_runs() {
+    [ ! -d /run/systemd/system ] || { echo "skip: systemd host"; return 0; }
+    fake_preflight
+    SUDO_NEEDS_PW='' preflight_inst
+    grep -qx "ran 10-a firefox dry=0" "$HOME/ran"
+}
 
 t "--help" help_exits_0
 t "unknown option fails" bad_option_fails
@@ -74,4 +101,6 @@ t "a failing step stops the run with a resume hint" failing_step_stops_with_hint
 t "warnings appear in the summary" warnings_in_summary
 t "no terminal and open stdin: defaults, no hang" no_tty_fifo_uses_defaults
 t "no terminal: piped script text isn't taken as answers" no_tty_script_text_not_answers
+t "no terminal and sudo wants a password: says so" no_tty_password_sudo_explains
+t "no terminal and passwordless sudo: runs" no_tty_passwordless_sudo_runs
 exit $fail
