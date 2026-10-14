@@ -30,6 +30,9 @@ sys_line "$NET_ETC/dhcpcd.conf" 'denyinterfaces wlan*'
 # so a re-run checks the switch again instead of trusting it.
 marker=$DOTFILES_STATE/network-switch-in-progress
 ROLLBACK_TRIES=${ROLLBACK_TRIES:-30}
+PRECHECK_TRIES=${PRECHECK_TRIES:-10}
+# 0 when the old network stack is kept: then iwd and dhcpcd mustn't start at boot
+use_iwd=1
 
 # online [TRIES]  can we reach archlinux.org? tries about every 1-4 s
 online() {
@@ -79,7 +82,11 @@ interrupted() {
 # Hand over from connman when it runs, when it is enabled but stopped (as after
 # an interrupted switch), or when an earlier switch never finished.
 if started connmand || enabled connmand || [ -e "$marker" ]; then
-    if [ "$DRY_RUN" = 1 ]; then
+    if [ "$DRY_RUN" != 1 ] && started connmand && ! online "$PRECHECK_TRIES"; then
+        # the check can't work here (captive portal, proxy, blocked site), so it would roll back anyway
+        warn "can't reach https://archlinux.org through connman, so the network stays on connman (iwd and dhcpcd are set up but not enabled). Fix the connection and resume with: install --from 30-network"
+        use_iwd=0
+    elif [ "$DRY_RUN" = 1 ]; then
         say "[dry-run] would copy connman Wi-Fi networks to iwd, switch from connman to iwd + dhcpcd, and put connman back if that leaves the machine offline"
     else
         wpa_was_running=0
@@ -118,7 +125,9 @@ else
     srun resolvconf -u || true
 fi
 
-svc_add iwd default
-svc_add dhcpcd default
+if [ "$use_iwd" = 1 ]; then
+    svc_add iwd default
+    svc_add dhcpcd default
+fi
 svc_add sshd default
 svc_add bluetoothd default
