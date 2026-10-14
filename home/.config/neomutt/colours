@@ -1,0 +1,21 @@
+color message cyan black
+color attachment green black
+color body green black .
+color body yellow black "^[ 	]*>.*$"
+color header cyan black .
+color index green black .
+color index white black ~U
+color index black white ~T
+color index red black ~D
+color indicator black green
+color normal green black
+color status black white
+color tilde green black
+color markers magenta black
+color underline yellow black
+color signature red black
+color bold yellow black
+color hdrdefault cyan black
+color quoted white black
+color search black green
+color tree cyan black

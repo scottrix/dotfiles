@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Add an IMAP/SMTP account to neomutt. Passwords are stored GPG-encrypted and
+# decrypted by neomutt when it starts (gpg-agent caches the key's passphrase).
+# The account added last is the one neomutt opens at startup; F2, F3, ...
+# switch between accounts in the order they were added.
+# shellcheck disable=SC2154  # prompt/secret assign their variables through printf -v
+set -euo pipefail
+
+dir=${XDG_CONFIG_HOME:-$HOME/.config}/neomutt
+die() { printf 'mail-account-add: %s\n' "$*" >&2; exit 1; }
+
+# prompt VAR QUESTION [DEFAULT]
+prompt() {
+    local answer
+    read -r -p "$2${3:+ [$3]}: " answer || true
+    printf -v "$1" '%s' "${answer:-${3:-}}"
+    [ -n "${!1}" ] || die "$2 is required"
+}
+# secret VAR QUESTION [DEFAULT]  like prompt, without echo
+secret() {
+    local answer
+    read -r -s -p "$2: " answer || true
+    echo
+    printf -v "$1" '%s' "${answer:-${3:-}}"
+    [ -n "${!1}" ] || die "$2 is required"
+}
+
+[ -f "$dir/accounts.rc" ] || die "no $dir/accounts.rc; run the dotfiles installer with neomutt first"
+
+if ! gpg --list-secret-keys --with-colons 2> /dev/null | grep -q '^sec'; then
+    echo "No GPG key found. One is needed to encrypt mail passwords."
+    prompt create "Create one now? (y/n)" y
+    [[ $create == [Yy]* ]] || exit 1
+    prompt keyname "Name for the key" "$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
+    prompt keymail "Email for the key"
+    gpg --quick-generate-key "$keyname <$keymail>" default default never
+fi
+recipient=$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')
+
+prompt name "Short account name (letters, digits, - or _)"
+[[ $name =~ ^[A-Za-z0-9_-]+$ ]] || die "bad account name: $name"
+[ ! -e "$dir/account.$name" ] || die "account $name already exists: $dir/account.$name"
+prompt from "From address"
+prompt realname "Your name" "$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
+prompt imap_host "IMAP server"
+prompt imap_port "IMAP port" 993
+prompt imap_user "IMAP user" "$from"
+prompt smtp_host "SMTP server"
+prompt smtp_port "SMTP port (465 = TLS, 587 = STARTTLS)" 465
+prompt smtp_user "SMTP user" "$imap_user"
+secret imap_pass "IMAP password"
+secret smtp_pass "SMTP password (Enter = same as IMAP)" "$imap_pass"
+
+smtp_scheme=smtps
+[ "$smtp_port" = 465 ] || smtp_scheme=smtp
+
+umask 077
+printf '%s' "$imap_pass" | gpg --batch --yes --quiet -e -r "$recipient" -o "$dir/pass.$name.imap.gpg"
+printf '%s' "$smtp_pass" | gpg --batch --yes --quiet -e -r "$recipient" -o "$dir/pass.$name.smtp.gpg"
+
+cat > "$dir/account.$name" << EOT
+# $name: written by mail-account-add
+set from = "$from"
+set realname = "$realname"
+
+set imap_user = "$imap_user"
+set imap_pass = "\`gpg --batch -dq $dir/pass.$name.imap.gpg\`"
+set folder = "imaps://$imap_host:$imap_port/"
+
+set smtp_user = "$smtp_user"
+set smtp_pass = "\`gpg --batch -dq $dir/pass.$name.smtp.gpg\`"
+set smtp_url = "$smtp_scheme://$smtp_host:$smtp_port/"
+
+set ssl_starttls = yes
+set ssl_force_tls = yes
+
+set spoolfile = "+Inbox"
+set postponed = "+Drafts"
+set record = "+Sent"
+set trash = "+Trash"
+
+set header_cache = "\$XDG_CACHE_HOME/neomutt/headers.$name"
+set message_cachedir = "\$XDG_CACHE_HOME/neomutt/bodies.$name"
+set certificate_file = "\$XDG_CACHE_HOME/neomutt/certificates.$name"
+EOT
+
+key=$(($(grep -c '^macro index <f' "$dir/accounts.rc" || true) + 2))
+{
+    # shellcheck disable=SC2016
+    printf '\nsource "$XDG_CONFIG_HOME/neomutt/account.%s"\n' "$name"
+    printf "folder-hook \$folder 'source \"\$XDG_CONFIG_HOME/neomutt/account.%s\"'\n" "$name"
+    if [ "$key" -le 12 ]; then
+        printf "macro index <f%s> '<sync-mailbox><enter-command>source \"\$XDG_CONFIG_HOME/neomutt/account.%s\"<enter><change-folder>!<enter>'\n" "$key" "$name"
+    fi
+} >> "$dir/accounts.rc"
+
+echo "Added $name. Start neomutt to check it; F$key switches to it."
