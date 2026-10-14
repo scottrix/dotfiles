@@ -113,7 +113,10 @@ sys_line() {
 
 # svc_add SERVICE RUNLEVEL  enable an OpenRC service unless it already is
 svc_add() {
-    rc-update show "$2" 2> /dev/null | grep -qw -- "$1" && return 0
+    # Exact match on the service-name column; awk reads all input, so no SIGPIPE under pipefail.
+    if rc-update show "$2" 2> /dev/null | awk -v s="$1" '$1 == s { f = 1 } END { exit !f }'; then
+        return 0
+    fi
     srun rc-update add "$1" "$2"
 }
 

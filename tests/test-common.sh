@@ -49,6 +49,22 @@ pkgs_from_strips_comments() {
 }
 pkgs_from_empty_list_ok() { printf '# nothing\n' > "$DOTFILES_DIR/packages/l"; [ -z "$(pkgs_from l)" ]; }
 warn_records() { warn "careful" 2>/dev/null; grep -qx careful "$WARNINGS_FILE"; }
+# Fake rc-update (show only) and sudo (logs its args) on PATH; no real system touched.
+fake_openrc() {
+    mkdir -p "$T/bin"
+    cat > "$T/bin/rc-update" <<'EOF'
+#!/bin/sh
+printf '                 net.lo | default\n                 sshd | default\n'
+EOF
+    cat > "$T/bin/sudo" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >> "$T/sudo.log"
+EOF
+    chmod +x "$T/bin/rc-update" "$T/bin/sudo"
+    export PATH="$T/bin:$PATH"
+}
+svc_add_enables_missing() { fake_openrc; svc_add net default; grep -qx 'rc-update add net default' "$T/sudo.log"; }
+svc_add_skips_enabled() { fake_openrc; svc_add sshd default; [ ! -e "$T/sudo.log" ]; }
 
 t "link creates a symlink" link_creates
 t "link twice is a no-op" link_twice_is_noop
@@ -62,4 +78,6 @@ t "render substitutes only named vars" render_only_named_vars
 t "pkgs_from strips comments and blanks" pkgs_from_strips_comments
 t "pkgs_from on an empty list" pkgs_from_empty_list_ok
 t "warn records the warning" warn_records
+t "svc_add enables a service whose name prefixes an enabled one" svc_add_enables_missing
+t "svc_add skips an already enabled service" svc_add_skips_enabled
 exit $fail
