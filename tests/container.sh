@@ -13,7 +13,7 @@ set -euo pipefail
 pacman -Syu --noconfirm --needed sudo git gettext > /dev/null
 useradd -m tester
 echo 'tester ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/tester
-install -d -o tester -g tester /home/tester/.local/share
+install -d -o tester -g tester /home/tester/.local /home/tester/.local/share
 cp -r /src /home/tester/.local/share/dotfiles
 chown -R tester:tester /home/tester/.local/share/dotfiles
 as_tester() {
