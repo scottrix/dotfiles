@@ -20,7 +20,10 @@ setup() {
 c=$(basename "$0"); F=$FAKE
 case "$c" in
 sudo) echo "sudo $*" >> "$F/cmds"; "$@"; exit ;;
-curl) [ -e "$F/online" ]; exit ;;
+curl)
+    # INTERRUPT=1: the user presses Ctrl-C (here: TERM) while the step waits on iwd
+    if [ -n "${INTERRUPT:-}" ] && [ -e "$F/run/iwd" ]; then kill -TERM "$PPID"; fi
+    [ -e "$F/online" ]; exit ;;
 sleep) exit 0 ;;
 pgrep) exit 1 ;;
 rc-service)
@@ -32,7 +35,10 @@ rc-service)
        [ "$svc $act" = "${FAIL:-}" ] && exit 1
        if [ "$act" = start ]; then touch "$F/run/$svc"; fi
        if [ "$act" = stop ]; then rm -f "$F/run/$svc"; fi
-       if [ "$svc $act" = "iwd start" ]; then touch "$F/online"; fi
+       # note whether the in-progress marker was there while iwd was started
+       if [ "$svc $act" = "iwd start" ] && [ -e "$DOTFILES_STATE/network-switch-in-progress" ]; then touch "$F/marker-seen"; fi
+       # IWD_OFFLINE=1: iwd and dhcpcd come up but never get the machine online
+       if [ "$svc $act" = "iwd start" ] && [ -z "${IWD_OFFLINE:-}" ]; then touch "$F/online"; fi
        if [ "$svc $act" = "connmand start" ]; then rm -f "$F/online"; fi
        exit 0 ;;
     esac ;;
@@ -52,7 +58,7 @@ FAKE
 # run_step [ENV=VAL...]: run the step with fakes; "online" tells the fake curl whether the net is up
 run_step() {
     env FAKE="$F" PATH="$F/bin:$PATH" DOTFILES_DIR="$here" NET_ETC="$T/etc" \
-        CONNMAN_DIR="$T/connman" IWD_DIR="$T/iwdnet" ONLINE_TRIES=1 \
+        CONNMAN_DIR="$T/connman" IWD_DIR="$T/iwdnet" ONLINE_TRIES=1 DOTFILES_STATE="$T/state" \
         BACKUP_DIR="$T/bak" WARNINGS_FILE="$T/warn" "$@" bash "$here/steps/30-network.sh"
 }
 running() { [ -e "$F/run/$1" ]; }
@@ -66,10 +72,7 @@ iwd_start_fails() {
 }
 offline_after_switch() {
     local rc=0
-    # fake iwd start normally brings the net up; make it fail to come up
-    # shellcheck disable=SC2016
-    sed -i 's/touch "\$F\/online"/true/' "$F/bin/rc-service"
-    run_step DRY_RUN=0 || rc=$?
+    run_step DRY_RUN=0 IWD_OFFLINE=1 || rc=$?
     [ "$rc" != 0 ] && running connmand && in_default connmand &&
         grep -q 'rc-service connmand start' "$CMDLOG" &&
         ! grep -q 'rc-update del connmand' "$CMDLOG"
@@ -87,10 +90,40 @@ dry_run_changes_nothing() {
     [ "$before" = "$after" ] &&
         ! grep -Eq 'rc-service [a-z]+ (start|stop)|rc-update (add|del)|pkill|resolvconf' "$CMDLOG"
 }
+marker() { [ -e "$T/state/network-switch-in-progress" ]; }
 stale_connman_removed() {
     rm -f "$F/run/connmand"
     run_step DRY_RUN=0 > /dev/null
-    ! in_default connmand
+    ! in_default connmand && running iwd && ! marker
+}
+# a re-run after an interrupted switch: connman is enabled but stopped, iwd can't get online
+stale_connman_offline_rolls_back() {
+    local rc=0
+    rm -f "$F/run/connmand"
+    run_step DRY_RUN=0 IWD_OFFLINE=1 || rc=$?
+    [ "$rc" != 0 ] && running connmand && in_default connmand && ! running iwd &&
+        grep -q 'rc-service connmand start' "$CMDLOG" && ! grep -q 'rc-update del connmand' "$CMDLOG" &&
+        ! marker
+}
+interrupted_switch_rolls_back() {
+    local rc=0 out
+    out=$(run_step DRY_RUN=0 IWD_OFFLINE=1 INTERRUPT=1 2>&1) || rc=$?
+    printf '%s\n' "$out"
+    [ "$rc" != 0 ] && running connmand && in_default connmand && ! running iwd && ! running dhcpcd &&
+        ! grep -q 'rc-update del connmand' "$CMDLOG" && ! marker &&
+        grep -q 'checking the connection' <<< "$out" && grep -qi 'interrupted' <<< "$out"
+}
+# the marker alone (connman neither running nor enabled) still means: check, or put connman back
+marker_resumes_switch() {
+    rm -f "$F/run/connmand"; sed -i '/^connmand |/d' "$F/default"
+    mkdir -p "$T/state"; echo 'connmand 0' > "$T/state/network-switch-in-progress"
+    local rc=0
+    run_step DRY_RUN=0 IWD_OFFLINE=1 || rc=$?
+    [ "$rc" != 0 ] && running connmand && ! running iwd && ! marker
+}
+marker_cleared_on_success() {
+    run_step DRY_RUN=0 > /dev/null
+    [ -e "$F/marker-seen" ] && ! marker && ! in_default connmand
 }
 
 t() {
@@ -106,5 +139,9 @@ t "iwd start fails: connman restarted and kept enabled" iwd_start_fails
 t "offline after switch: connman restarted and kept enabled" offline_after_switch
 t "success: connman leaves the default runlevel" success_removes_connman
 t "dry run changes nothing" dry_run_changes_nothing
-t "stopped but enabled connman is removed from default" stale_connman_removed
+t "stopped but enabled connman: switch checked, then removed from default" stale_connman_removed
+t "connman enabled, not running, offline after iwd start: connman restarted and kept enabled" stale_connman_offline_rolls_back
+t "interrupted during the connection check: connman restarted and kept enabled" interrupted_switch_rolls_back
+t "in-progress marker alone: switch checked, connman put back when offline" marker_resumes_switch
+t "in-progress marker exists during the switch and is removed after" marker_cleared_on_success
 exit $fail
