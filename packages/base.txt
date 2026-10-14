@@ -1,0 +1,104 @@
+# pacman packages installed by steps/20-packages.sh (one per line; # comments)
+
+# desktop: labwc on Wayland
+labwc
+waybar
+foot
+swaybg
+swayidle
+swaylock
+mako
+libnotify           # notify-send
+grim
+slurp
+wl-clipboard
+wlr-randr
+xorg-xwayland
+xdg-desktop-portal-wlr
+xdg-desktop-portal-gtk
+xdg-utils
+xdg-user-dirs
+polkit-gnome
+brightnessctl
+impala              # Wi-Fi TUI, opened from waybar
+pavucontrol
+blueman
+bluez
+bluez-utils
+bluez-openrc
+thunar
+tumbler
+gvfs
+atril               # PDF viewer
+gpicview            # image viewer (also used by the neomutt mailcap)
+libinput-tools
+wev
+libxml2             # xmllint, used to check generated configs
+
+# fonts
+ttf-terminus-nerd
+ttf-liberation
+ttf-droid
+ttf-roboto
+otf-font-awesome
+
+# login
+lightdm
+lightdm-openrc
+lightdm-gtk-greeter
+dbus-openrc
+
+# audio (PipeWire, no PulseAudio)
+pipewire
+pipewire-openrc
+pipewire-pulse
+pipewire-pulse-openrc
+wireplumber
+wireplumber-openrc
+alsa-utils
+alsa-utils-openrc
+
+# network
+iwd
+iwd-openrc
+dhcpcd
+dhcpcd-openrc
+openresolv
+openssh
+openssh-openrc
+
+# shell and everyday tools
+vim
+git
+git-lfs
+github-cli
+gnupg
+bash-completion
+rsync
+wget
+curl
+jq
+zip
+unzip
+7zip
+man-db
+man-pages
+tmux
+lsof
+strace
+usbutils
+
+# build tools
+base-devel
+cmake
+ccache
+python
+python-pip
+
+# containers: podman standing in for docker
+podman
+podman-compose
+podman-docker
+
+# android
+android-tools

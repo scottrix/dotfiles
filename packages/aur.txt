@@ -1,0 +1,3 @@
+# AUR packages built by pikaur in steps/20-packages.sh (one per line; # comments).
+# A package that fails to build is skipped with a warning.
+# The chosen browser is added automatically when it comes from the AUR.
