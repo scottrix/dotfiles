@@ -215,6 +215,13 @@ users_deny_line_kept() {
     run_step DRY_RUN=0 IWD_OFFLINE=1 || rc=$?
     [ "$rc" != 0 ] && running wpa_supplicant && running dhcpcd && grep -qxF 'denyinterfaces wlan* wlp*' "$T/etc/dhcpcd.conf"
 }
+# rollback can't restart connman: the switch stays marked unfinished
+failed_restore_keeps_marker() {
+    local rc=0 out
+    out=$(run_step DRY_RUN=0 IWD_OFFLINE=1 FAIL="connmand start" 2>&1) || rc=$?
+    printf '%s\n' "$out"
+    [ "$rc" != 0 ] && marker && grep -q 'still marked unfinished' <<< "$out"
+}
 wpa_del_failure_tolerated() {
     echo 'wpa_supplicant | default' >> "$F/default"
     run_step DRY_RUN=0 FAIL_DEL=wpa_supplicant > /dev/null
@@ -248,6 +255,7 @@ t "wpa_supplicant running, offline after iwd start: wpa_supplicant and dhcpcd pu
 t "wpa_supplicant running, offline before the switch: left alone, dhcpcd keeps Wi-Fi" wpa_supplicant_offline_before
 t "marker left and old stack running again: rollback uses the marker's flags" marker_with_old_stack_running_restores_it
 t "a deny line that was already there survives a rollback" users_deny_line_kept
+t "rollback that can't restart connman keeps the marker" failed_restore_keeps_marker
 t "success tolerates rc-update del wpa_supplicant failing" wpa_del_failure_tolerated
 t "in-progress marker exists during the switch and is removed after" marker_cleared_on_success
 exit $fail

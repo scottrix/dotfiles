@@ -112,8 +112,12 @@ rollback() {
     else
         sudo rc-service dhcpcd stop || true
     fi
-    rm -f "$marker"
     trap - INT TERM HUP
+    if ! started "$old"; then
+        # keep the marker, so a re-run knows the switch is unfinished
+        die "could not switch to iwd, and $name didn't start again either; check with $check_cmd and rc-service $old start. The switch is still marked unfinished, so resuming with install --from 30-network tries it again or puts $name back"
+    fi
+    rm -f "$marker"
     if online "$ROLLBACK_TRIES"; then
         die "could not switch to iwd, so $name is back and online. Plug in ethernet (or add Wi-Fi with iwctl) and resume with: install --from 30-network"
     fi
