@@ -5,7 +5,9 @@ set -euo pipefail
 . "$DOTFILES_DIR/lib/common.sh"
 
 srun pacman -Syu --needed --noconfirm artix-archlinux-support base-devel git
-srun pacman-key --populate archlinux
+# a fresh image may have no keyring yet; --init and --populate are safe to repeat
+srun pacman-key --init
+srun pacman-key --populate artix archlinux
 
 for repo in extra multilib; do
     grep -q "^\[$repo\]" /etc/pacman.conf && continue
