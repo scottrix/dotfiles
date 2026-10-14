@@ -38,7 +38,7 @@ the defaults.
 | 10-repos | Enables the Arch `[extra]` and `[multilib]` repos, upgrades, installs pikaur. |
 | 20-packages | Installs `packages/base.txt`, `packages/aur.txt`, the browser and the mail client. Firefox and LibreWolf come from the Artix/Arch repos; Chrome is built from the AUR. |
 | 30-network | Wi-Fi by iwd, ethernet by dhcpcd, DNS by openresolv. Moves over from connman (copying saved Wi-Fi passwords) or wpa_supplicant, and puts the old setup back if that leaves you offline or the switch is interrupted. If NetworkManager (or another network manager) is in use, it only writes the config and tells you how to switch by hand. Enables sshd and bluetooth. |
-| 40-session | LightDM with labwc as the session; dbus and PipeWire as OpenRC user services. |
+| 40-session | LightDM with labwc as the session and your keyboard layout on the login screen; dbus and PipeWire as OpenRC user services. |
 | 50-desktop | labwc (theme, keys, menu, desktops Main/Web/Mail), waybar, foot, mako notifications (styled like waybar). At login: 9 terminals on Main, the browser on Web, mail on Mail. |
 | 60-audio-input | Middle-click paste in GTK apps (set with gsettings, stored by dconf); ALSA mixer levels kept across reboots. |
 | 70-shell | bash, vim with plugins (vim-plug), gpg-agent as the SSH agent. |

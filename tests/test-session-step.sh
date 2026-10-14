@@ -34,7 +34,8 @@ FAKE
 
 run_step() {
     env FAKE="$F" PATH="$F/bin:$PATH" HOME="$T/home" DOTFILES_DIR="$here" \
-        LIGHTDM_CONF="$T/lightdm.conf" BACKUP_DIR="$T/bak" WARNINGS_FILE="$T/warn" \
+        LIGHTDM_CONF="$T/lightdm.conf" XORG_KB_CONF="$T/xorg.conf.d/00-keyboard.conf" KB_LAYOUT=gb \
+        BACKUP_DIR="$T/bak" WARNINGS_FILE="$T/warn" \
         "$@" bash "$here/steps/40-session.sh"
 }
 seat() { sed -n '/^\[Seat:\*\]/,/^\[[^S]/p' "$T/lightdm.conf"; }
@@ -53,10 +54,10 @@ writes_dmrc() {
 second_run_is_quiet() {
     local out before after
     run_step DRY_RUN=0 > /dev/null
-    before=$(cat "$T/lightdm.conf" "$T/home/.dmrc"; ls -A "$T" "$T/home")
+    before=$(cat "$T/lightdm.conf" "$T/home/.dmrc" "$T/xorg.conf.d/00-keyboard.conf"; ls -A "$T" "$T/home")
     : > "$CMDLOG"
     out=$(run_step DRY_RUN=0 2>&1)
-    after=$(cat "$T/lightdm.conf" "$T/home/.dmrc"; ls -A "$T" "$T/home")
+    after=$(cat "$T/lightdm.conf" "$T/home/.dmrc" "$T/xorg.conf.d/00-keyboard.conf"; ls -A "$T" "$T/home")
     [ -z "$out" ] && [ "$before" = "$after" ] && [ ! -e "$T/bak" ] &&
         ! grep -q 'rc-update' "$CMDLOG"
 }
@@ -66,8 +67,15 @@ dry_run_changes_nothing() {
     out=$(run_step DRY_RUN=1 2>&1)
     after=$(cat "$T/lightdm.conf"; ls -A "$T" "$T/home")
     [ "$before" = "$after" ] && [ ! -e "$T/home/.dmrc" ] && [ ! -e "$T/lightdm.conf.dotfiles-bak" ] &&
+        [ ! -e "$T/xorg.conf.d" ] &&
         ! grep -Eq 'rc-update (add|--user)|sudo (sed|cp)' "$CMDLOG" &&
         grep -q 'dry-run' <<< "$out"
+}
+greeter_keyboard_layout() {
+    run_step DRY_RUN=0 KB_LAYOUT=de > /dev/null
+    local f=$T/xorg.conf.d/00-keyboard.conf
+    grep -qx '    Option "XkbLayout" "de"' "$f" && grep -qx '    MatchIsKeyboard "on"' "$f" &&
+        grep -qx 'Section "InputClass"' "$f" && grep -qx 'EndSection' "$f"
 }
 user_services_only_when_missing() {
     local d=$T/home/.config/rc/runlevels/default
@@ -105,6 +113,7 @@ t "user-session and greeter-session land in [Seat:*]" sets_options
 t ".dmrc written in HOME" writes_dmrc
 t "second run changes nothing and prints nothing" second_run_is_quiet
 t "dry run changes nothing" dry_run_changes_nothing
+t "greeter (Xorg) gets the chosen keyboard layout" greeter_keyboard_layout
 t "user services added only when links are missing" user_services_only_when_missing
 t "all four user services added on a fresh home" all_four_user_services
 t "other display manager is warned about" warns_on_other_dm
