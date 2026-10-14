@@ -21,10 +21,19 @@ as_tester() {
 }
 for step in 10-repos 20-packages; do as_tester "$1" "$2" --only "$step"; done
 for step in 30-network 40-session; do as_tester "$1" "$2" --dry-run --only "$step"; done
-for step in 50-desktop 60-audio-input 70-shell 80-mail; do as_tester "$1" "$2" --only "$step"; done
+first=$(mktemp)
+for step in 50-desktop 60-audio-input 70-shell 80-mail; do as_tester "$1" "$2" --only "$step" 2>&1 | tee -a "$first"; done
 su - tester -c 'bash ~/.local/share/dotfiles/tests/check-installed.sh'
 echo "== second run changes nothing"
-out=$(as_tester "$1" "$2" --only 50-desktop; as_tester "$1" "$2" --only 70-shell; as_tester "$1" "$2" --only 80-mail)
+# the marker grep must be able to match: the first run has to have printed some
+grep -qE 'linked|wrote|backed up' "$first" || { echo "FAIL first run printed no change markers"; exit 1; }
+out=""
+for step in 50-desktop 70-shell 80-mail; do
+    rc=0
+    o=$(as_tester "$1" "$2" --only "$step" 2>&1) || rc=$?
+    out+=$o$'\n'
+    if [ "$rc" != 0 ]; then echo "$out"; echo "FAIL second run of $step exited $rc"; exit 1; fi
+done
 if grep -E 'linked|wrote|backed up' <<< "$out"; then echo "FAIL second run changed files"; exit 1; fi
 echo "CONTAINER TEST PASSED"
 EOF
