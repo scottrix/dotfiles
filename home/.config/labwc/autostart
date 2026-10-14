@@ -1,0 +1,27 @@
+mkdir -p ~/.logs
+exec 2> ~/.logs/startup.log
+set -x
+export PATH=$HOME/bin:$PATH
+
+# OpenRC user services
+rc-service --user dbus start
+rc-service --user pipewire start
+rc-service --user pipewire-pulse start
+rc-service --user wireplumber start
+
+# let portals (screen sharing) find this session
+dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE DISPLAY
+
+swaybg -c '#006688' >/dev/null 2>&1 &
+waybar >/dev/null 2>&1 &
+mako >/dev/null 2>&1 &
+/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 >/dev/null 2>&1 &
+blueman-applet >/dev/null 2>&1 &
+
+# lock on suspend only; no idle lock or blanking
+swayidle -w before-sleep ~/bin/lock >/dev/null 2>&1 &
+
+labwc_startup &
+
+# Docker-compatible API socket for docker compose (DOCKER_HOST is set in ~/.bashrc)
+podman system service --time=0 >/dev/null 2>&1 &

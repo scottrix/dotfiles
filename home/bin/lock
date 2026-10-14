@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec swaylock -f -e -c 000020

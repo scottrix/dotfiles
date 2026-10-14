@@ -1,0 +1,15 @@
+#!/bin/bash -x
+# Login layout: 9 terminals on Main, browser on Web, mail on Mail.
+# Placement is done by the windowRules in ~/.config/labwc/rc.xml.
+exec &> ~/.logs/labwc_startup.log
+. ~/.profile
+gpgconf --launch gpg-agent
+echo "export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)" > ~/.gpgagentrc
+. ~/.gpgagentrc
+for n in 1 2 3 4 5 6 7 8 9
+do
+    foot --app-id=startterm-$n --login-shell &
+    sleep 0.2
+done
+${BROWSER_CMD} &>/dev/null &
+${MAIL_START}
