@@ -86,6 +86,22 @@ no_tty_passwordless_sudo_runs() {
     SUDO_NEEDS_PW='' preflight_inst
     grep -qx "ran 10-a firefox dry=0" "$HOME/ran"
 }
+# a download cut off anywhere must run nothing: --help shows whether the script body ran
+truncated_download_runs_nothing() {
+    local size n k
+    size=$(wc -c < "$here/install"); n=$(wc -l < "$here/install")
+    for ((k = 1; k < n; k++)); do
+        if head -n "$k" "$here/install" | bash -s -- --help 2> /dev/null | grep -q usage; then
+            echo "cut after line $k ran"; return 1
+        fi
+    done
+    for ((k = size - 12; k < size - 1; k++)); do
+        if head -c "$k" "$here/install" | bash -s -- --help 2> /dev/null | grep -q usage; then
+            echo "cut after byte $k ran"; return 1
+        fi
+    done
+    bash -s -- --help < "$here/install" | grep -q usage
+}
 
 t "--help" help_exits_0
 t "unknown option fails" bad_option_fails
@@ -101,6 +117,7 @@ t "a failing step stops the run with a resume hint" failing_step_stops_with_hint
 t "warnings appear in the summary" warnings_in_summary
 t "no terminal and open stdin: defaults, no hang" no_tty_fifo_uses_defaults
 t "no terminal: piped script text isn't taken as answers" no_tty_script_text_not_answers
+t "a truncated download runs nothing" truncated_download_runs_nothing
 t "no terminal and sudo wants a password: says so" no_tty_password_sudo_explains
 t "no terminal and passwordless sudo: runs" no_tty_passwordless_sudo_runs
 exit $fail

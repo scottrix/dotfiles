@@ -22,22 +22,6 @@ usage: install [options]
 EOT
 }
 
-args=("$@")
-DRY_RUN=0 ASSUME_YES=0 ONLY="" FROM="" NO_UPDATE=0
-while [ $# -gt 0 ]; do
-    case $1 in
-        --dry-run) DRY_RUN=1 ;;
-        --yes) ASSUME_YES=1 ;;
-        --only) ONLY=${2:?--only needs a step name}; shift ;;
-        --from) FROM=${2:?--from needs a step name}; shift ;;
-        --no-update) NO_UPDATE=1 ;;
-        -h | --help) usage; exit 0 ;;
-        *) usage >&2; exit 2 ;;
-    esac
-    shift
-done
-export DRY_RUN ASSUME_YES
-
 fatal() { printf 'error: %s\n' "$*" >&2; exit 1; }
 have_tty() { [ "${DOTFILES_NO_TTY:-0}" != 1 ] && { : < /dev/tty; } 2> /dev/null; }
 no_tty_note() { echo "No terminal found; using saved answers or the defaults." >&2; }
@@ -62,84 +46,104 @@ preflight() {
     fi
 }
 
-# Bootstrap: get the checkout up to date, then hand over to its copy of this script.
-if [ "$NO_UPDATE" = 0 ]; then
-    preflight
-    if ! command -v git > /dev/null || ! command -v envsubst > /dev/null; then
-        if [ "$DRY_RUN" = 1 ]; then
-            echo "dry-run would install: git gettext" >&2
-            fatal "dry-run needs git and gettext installed first"
+# The whole run is one function, called on the last line, so a download cut
+# off part way through (curl | bash) runs nothing.
+main() {
+    args=("$@")
+    DRY_RUN=0 ASSUME_YES=0 ONLY="" FROM="" NO_UPDATE=0
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --dry-run) DRY_RUN=1 ;;
+            --yes) ASSUME_YES=1 ;;
+            --only) ONLY=${2:?--only needs a step name}; shift ;;
+            --from) FROM=${2:?--from needs a step name}; shift ;;
+            --no-update) NO_UPDATE=1 ;;
+            -h | --help) usage; exit 0 ;;
+            *) usage >&2; exit 2 ;;
+        esac
+        shift
+    done
+    export DRY_RUN ASSUME_YES
+
+    # Bootstrap: get the checkout up to date, then hand over to its copy of this script.
+    if [ "$NO_UPDATE" = 0 ]; then
+        preflight
+        if ! command -v git > /dev/null || ! command -v envsubst > /dev/null; then
+            if [ "$DRY_RUN" = 1 ]; then
+                echo "dry-run would install: git gettext" >&2
+                fatal "dry-run needs git and gettext installed first"
+            fi
+            sudo pacman -Syu --needed --noconfirm git gettext
         fi
-        sudo pacman -Syu --needed --noconfirm git gettext
-    fi
-    if [ -d "$DOTFILES_DIR/.git" ]; then
-        git -C "$DOTFILES_DIR" pull --ff-only || fatal "couldn't update $DOTFILES_DIR (local changes?)"
-    else
-        git clone "$REPO_URL" "$DOTFILES_DIR"
-    fi
-    if have_tty; then
-        exec "$DOTFILES_DIR/install" --no-update "${args[@]}" < /dev/tty
-    fi
-    no_tty_note
-    exec "$DOTFILES_DIR/install" --no-update --yes "${args[@]}" < /dev/null
-fi
-
-preflight
-# shellcheck source=lib/common.sh
-. "$DOTFILES_DIR/lib/common.sh"
-# shellcheck source=lib/choices.sh
-. "$DOTFILES_DIR/lib/choices.sh"
-
-mapfile -t steps < <(cd "$DOTFILES_DIR/steps" && for f in *.sh; do echo "${f%.sh}"; done)
-for s in "$ONLY" "$FROM"; do
-    [ -z "$s" ] || [ -f "$DOTFILES_DIR/steps/$s.sh" ] || die "no such step: $s (steps: ${steps[*]})"
-done
-
-if [ ! -t 0 ] && [ "$ASSUME_YES" != 1 ]; then
-    if have_tty; then
-        exec < /dev/tty
-    else
-        ASSUME_YES=1
+        if [ -d "$DOTFILES_DIR/.git" ]; then
+            git -C "$DOTFILES_DIR" pull --ff-only || fatal "couldn't update $DOTFILES_DIR (local changes?)"
+        else
+            git clone "$REPO_URL" "$DOTFILES_DIR"
+        fi
+        if have_tty; then
+            exec "$DOTFILES_DIR/install" --no-update "${args[@]}" < /dev/tty
+        fi
         no_tty_note
+        exec "$DOTFILES_DIR/install" --no-update --yes "${args[@]}" < /dev/null
     fi
-fi
 
-load_choices "$CHOICES_FILE"
-ask_choices
-resolve_choices
-[ "$DRY_RUN" = 1 ] || save_choices "$CHOICES_FILE"
+    preflight
+    # shellcheck source=lib/common.sh
+    . "$DOTFILES_DIR/lib/common.sh"
+    # shellcheck source=lib/choices.sh
+    . "$DOTFILES_DIR/lib/choices.sh"
 
-BACKUP_DIR=$DOTFILES_STATE/backup/$(date +%Y%m%d-%H%M%S)
-WARNINGS_FILE=$(mktemp)
-export BACKUP_DIR WARNINGS_FILE
+    mapfile -t steps < <(cd "$DOTFILES_DIR/steps" && for f in *.sh; do echo "${f%.sh}"; done)
+    for s in "$ONLY" "$FROM"; do
+        [ -z "$s" ] || [ -f "$DOTFILES_DIR/steps/$s.sh" ] || die "no such step: $s (steps: ${steps[*]})"
+    done
 
-started=0
-[ -n "$FROM" ] || started=1
-for s in "${steps[@]}"; do
-    [ "$s" = "$FROM" ] && started=1
-    [ "$started" = 1 ] || continue
-    [ -z "$ONLY" ] || [ "$s" = "$ONLY" ] || continue
-    printf '==> %s\n' "$s"
-    if bash "$DOTFILES_DIR/steps/$s.sh"; then
-        printf '    ✓ %s\n' "$s"
-    else
-        printf '    ✗ %s failed. Fix the problem above, then resume with:\n        %s --from %s\n' \
-            "$s" "$DOTFILES_DIR/install" "$s" >&2
-        exit 1
+    if [ ! -t 0 ] && [ "$ASSUME_YES" != 1 ]; then
+        if have_tty; then
+            exec < /dev/tty
+        else
+            ASSUME_YES=1
+            no_tty_note
+        fi
     fi
-done
 
-echo
-echo "Done."
-if [ -s "$WARNINGS_FILE" ]; then
-    echo "Warnings:"
-    sed 's/^/  - /' "$WARNINGS_FILE"
-fi
-[ ! -d "$BACKUP_DIR" ] || echo "Files that were replaced are in $BACKUP_DIR"
-cat << EOT
-Next:
-  - reboot, then log in with the labwc session
-  - see $DOTFILES_DIR/README.md for after-install notes
-EOT
-[ "$MAIL" != neomutt ] || echo "  - add mail accounts with: mail-account-add"
-rm -f "$WARNINGS_FILE"
+    load_choices "$CHOICES_FILE"
+    ask_choices
+    resolve_choices
+    [ "$DRY_RUN" = 1 ] || save_choices "$CHOICES_FILE"
+
+    BACKUP_DIR=$DOTFILES_STATE/backup/$(date +%Y%m%d-%H%M%S)
+    WARNINGS_FILE=$(mktemp)
+    export BACKUP_DIR WARNINGS_FILE
+
+    started=0
+    [ -n "$FROM" ] || started=1
+    for s in "${steps[@]}"; do
+        [ "$s" = "$FROM" ] && started=1
+        [ "$started" = 1 ] || continue
+        [ -z "$ONLY" ] || [ "$s" = "$ONLY" ] || continue
+        printf '==> %s\n' "$s"
+        if bash "$DOTFILES_DIR/steps/$s.sh"; then
+            printf '    ✓ %s\n' "$s"
+        else
+            printf '    ✗ %s failed. Fix the problem above, then resume with:\n        %s --from %s\n' \
+                "$s" "$DOTFILES_DIR/install" "$s" >&2
+            exit 1
+        fi
+    done
+
+    echo
+    echo "Done."
+    if [ -s "$WARNINGS_FILE" ]; then
+        echo "Warnings:"
+        sed 's/^/  - /' "$WARNINGS_FILE"
+    fi
+    [ ! -d "$BACKUP_DIR" ] || echo "Files that were replaced are in $BACKUP_DIR"
+    echo "Next:"
+    echo "  - reboot, then log in with the labwc session"
+    echo "  - see $DOTFILES_DIR/README.md for after-install notes"
+    [ "$MAIL" != neomutt ] || echo "  - add mail accounts with: mail-account-add"
+    rm -f "$WARNINGS_FILE"
+}
+
+main "$@"
