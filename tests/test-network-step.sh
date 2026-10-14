@@ -25,7 +25,7 @@ curl)
     if [ -n "${INTERRUPT:-}" ] && [ -e "$F/run/iwd" ]; then kill -TERM "$PPID"; fi
     [ -e "$F/online" ]; exit ;;
 sleep) exit 0 ;;
-pgrep) exit 1 ;;
+pgrep) [ -e "$F/proc/$2" ]; exit ;;  # pgrep -x NAME
 rc-service)
     if [ "$1" = -e ]; then exit 1; fi
     svc=$1 act=$2
@@ -33,11 +33,13 @@ rc-service)
     status) [ -e "$F/run/$svc" ]; exit ;;
     *) echo "rc-service $svc $act" >> "$F/cmds"
        [ "$svc $act" = "${FAIL:-}" ] && exit 1
-       if [ "$act" = start ]; then touch "$F/run/$svc"; fi
+       if [ "$act" = start ] || [ "$act" = restart ]; then touch "$F/run/$svc"; fi
        if [ "$act" = stop ]; then rm -f "$F/run/$svc"; fi
        # the old network stack carries the connection: stopping it goes offline, starting it comes back
-       if [ "$svc $act" = "connmand stop" ]; then rm -f "$F/online"; fi
-       if [ "$svc $act" = "connmand start" ]; then touch "$F/online"; fi
+       case "$svc $act" in
+       "connmand stop" | "wpa_supplicant stop") rm -f "$F/online" ;;
+       "connmand start" | "wpa_supplicant start") touch "$F/online" ;;
+       esac
        # note whether the in-progress marker was there while iwd was started
        if [ "$svc $act" = "iwd start" ] && [ -e "$DOTFILES_STATE/network-switch-in-progress" ]; then touch "$F/marker-seen"; fi
        # IWD_OFFLINE=1: iwd and dhcpcd come up but never get the machine online
@@ -48,7 +50,8 @@ rc-update)
     case "$1" in
     show) cat "$F/default" ;;
     add) echo "rc-update $*" >> "$F/cmds"; echo "$2 | $3" >> "$F/default" ;;
-    del) echo "rc-update $*" >> "$F/cmds"; sed -i "/^$2 |/d" "$F/default" ;;
+    del) echo "rc-update $*" >> "$F/cmds"; [ "$2" != "${FAIL_DEL:-}" ] || exit 1
+         sed -i "/^$2 |/d" "$F/default" ;;
     esac ;;
 *) echo "$c $*" >> "$F/cmds" ;;
 esac
@@ -83,7 +86,8 @@ offline_after_switch() {
 success_removes_connman() {
     run_step DRY_RUN=0 > /dev/null
     ! in_default connmand && in_default iwd && in_default dhcpcd &&
-        grep -q '^clientid$' "$T/etc/dhcpcd.conf" && [ -f "$T/etc/iwd/main.conf" ]
+        grep -q '^clientid$' "$T/etc/dhcpcd.conf" && [ -f "$T/etc/iwd/main.conf" ] &&
+        grep -qxF 'denyinterfaces wlan* wlp*' "$T/etc/dhcpcd.conf"
 }
 dry_run_changes_nothing() {
     local before after
@@ -138,6 +142,67 @@ offline_before_switch_skips() {
         grep -q 'stays on connman' "$T/warn"
 }
 
+# no connman: another manager (or a wpa_supplicant + dhcpcd setup) runs the network
+no_connman() { rm -f "$F/run/connmand"; sed -i '/^connmand |/d' "$F/default"; }
+# left_alone: config written and warned about, iwd and dhcpcd neither started nor enabled
+left_alone() {
+    [ -f "$T/etc/iwd/main.conf" ] && grep -qxF 'denyinterfaces wlan* wlp*' "$T/etc/dhcpcd.conf" &&
+        ! grep -Eq 'rc-service (iwd|dhcpcd) (start|restart)|rc-service [a-z_]+ stop' "$CMDLOG" &&
+        ! in_default iwd && ! in_default dhcpcd && in_default sshd &&
+        grep -q "$1.*rc-update add iwd default" "$T/warn"
+}
+networkmanager_running() {
+    no_connman; touch "$F/run/NetworkManager"
+    run_step DRY_RUN=0 > /dev/null 2>&1
+    left_alone NetworkManager
+}
+networkmanager_enabled() {
+    no_connman; rm -f "$F/online"; echo 'NetworkManager | default' >> "$F/default"
+    run_step DRY_RUN=0 > /dev/null 2>&1
+    left_alone NetworkManager
+}
+netifrc_enabled() {
+    no_connman; echo 'net.eth0 | default' >> "$F/default"
+    run_step DRY_RUN=0 > /dev/null 2>&1
+    left_alone net.eth0
+}
+stray_wpa_supplicant() {
+    no_connman; mkdir -p "$F/proc"; touch "$F/proc/wpa_supplicant"
+    run_step DRY_RUN=0 > /dev/null 2>&1
+    left_alone wpa_supplicant
+}
+wpa_setup() {
+    no_connman; touch "$F/run/wpa_supplicant" "$F/run/dhcpcd"
+    printf 'wpa_supplicant | default\ndhcpcd | default\n' >> "$F/default"
+}
+wpa_supplicant_handed_over() {
+    wpa_setup
+    run_step DRY_RUN=0 > /dev/null
+    ! running wpa_supplicant && ! in_default wpa_supplicant && running iwd && in_default iwd &&
+        in_default dhcpcd && grep -qx 'rc-service wpa_supplicant stop' "$CMDLOG" &&
+        grep -qx 'rc-service dhcpcd restart' "$CMDLOG" && ! marker
+}
+wpa_supplicant_rolled_back() {
+    local rc=0
+    wpa_setup
+    run_step DRY_RUN=0 IWD_OFFLINE=1 || rc=$?
+    # dhcpcd served Wi-Fi for wpa_supplicant before, so it gets wlan* back
+    [ "$rc" != 0 ] && running wpa_supplicant && in_default wpa_supplicant && ! running iwd &&
+        running dhcpcd && ! grep -q 'denyinterfaces' "$T/etc/dhcpcd.conf" &&
+        grep -qx 'rc-service wpa_supplicant start' "$CMDLOG" && ! grep -q 'rc-update del' "$CMDLOG" && ! marker
+}
+wpa_supplicant_offline_before() {
+    wpa_setup; rm -f "$F/online"
+    run_step DRY_RUN=0 > /dev/null 2>&1
+    running wpa_supplicant && in_default wpa_supplicant && ! running iwd && ! in_default iwd &&
+        ! grep -q 'denyinterfaces' "$T/etc/dhcpcd.conf" && grep -q 'stays on wpa_supplicant' "$T/warn"
+}
+wpa_del_failure_tolerated() {
+    echo 'wpa_supplicant | default' >> "$F/default"
+    run_step DRY_RUN=0 FAIL_DEL=wpa_supplicant > /dev/null
+    ! in_default connmand && running iwd
+}
+
 t() {
     local name=$1 rc; shift
     set +e
@@ -156,5 +221,13 @@ t "connman enabled, not running, offline after iwd start: connman restarted and 
 t "interrupted during the connection check: connman restarted and kept enabled" interrupted_switch_rolls_back
 t "in-progress marker alone: switch checked, connman put back when offline" marker_resumes_switch
 t "offline before the switch: connman left running and enabled" offline_before_switch_skips
+t "NetworkManager running: configured, warned, iwd and dhcpcd left off" networkmanager_running
+t "NetworkManager enabled: configured, warned, iwd and dhcpcd left off" networkmanager_enabled
+t "netifrc interface enabled: configured, warned, iwd and dhcpcd left off" netifrc_enabled
+t "wpa_supplicant outside OpenRC: configured, warned, iwd and dhcpcd left off" stray_wpa_supplicant
+t "wpa_supplicant running: handed over to iwd" wpa_supplicant_handed_over
+t "wpa_supplicant running, offline after iwd start: wpa_supplicant and dhcpcd put back" wpa_supplicant_rolled_back
+t "wpa_supplicant running, offline before the switch: left alone, dhcpcd keeps Wi-Fi" wpa_supplicant_offline_before
+t "success tolerates rc-update del wpa_supplicant failing" wpa_del_failure_tolerated
 t "in-progress marker exists during the switch and is removed after" marker_cleared_on_success
 exit $fail
