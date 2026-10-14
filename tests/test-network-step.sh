@@ -197,6 +197,24 @@ wpa_supplicant_offline_before() {
     running wpa_supplicant && in_default wpa_supplicant && ! running iwd && ! in_default iwd &&
         ! grep -q 'denyinterfaces' "$T/etc/dhcpcd.conf" && grep -q 'stays on wpa_supplicant' "$T/warn"
 }
+# a re-run after a hard kill mid-switch (power loss): marker left, old stack running again after boot
+marker_with_old_stack_running_restores_it() {
+    local rc=0
+    wpa_setup
+    printf 'denyinterfaces wlan* wlp*\n' >> "$T/etc/dhcpcd.conf"
+    mkdir -p "$T/state"; echo 'wpa_supplicant 1 1 1' > "$T/state/network-switch-in-progress"
+    run_step DRY_RUN=0 IWD_OFFLINE=1 || rc=$?
+    [ "$rc" != 0 ] && running wpa_supplicant && running dhcpcd && ! running iwd &&
+        ! grep -q 'denyinterfaces' "$T/etc/dhcpcd.conf" && ! grep -q 'rc-service dhcpcd stop' "$CMDLOG" && ! marker
+}
+# the deny line was the user's own before we came: a rollback keeps it
+users_deny_line_kept() {
+    local rc=0
+    wpa_setup
+    printf 'denyinterfaces wlan* wlp*\n' >> "$T/etc/dhcpcd.conf"
+    run_step DRY_RUN=0 IWD_OFFLINE=1 || rc=$?
+    [ "$rc" != 0 ] && running wpa_supplicant && running dhcpcd && grep -qxF 'denyinterfaces wlan* wlp*' "$T/etc/dhcpcd.conf"
+}
 wpa_del_failure_tolerated() {
     echo 'wpa_supplicant | default' >> "$F/default"
     run_step DRY_RUN=0 FAIL_DEL=wpa_supplicant > /dev/null
@@ -228,6 +246,8 @@ t "wpa_supplicant outside OpenRC: configured, warned, iwd and dhcpcd left off" s
 t "wpa_supplicant running: handed over to iwd" wpa_supplicant_handed_over
 t "wpa_supplicant running, offline after iwd start: wpa_supplicant and dhcpcd put back" wpa_supplicant_rolled_back
 t "wpa_supplicant running, offline before the switch: left alone, dhcpcd keeps Wi-Fi" wpa_supplicant_offline_before
+t "marker left and old stack running again: rollback uses the marker's flags" marker_with_old_stack_running_restores_it
+t "a deny line that was already there survives a rollback" users_deny_line_kept
 t "success tolerates rc-update del wpa_supplicant failing" wpa_del_failure_tolerated
 t "in-progress marker exists during the switch and is removed after" marker_cleared_on_success
 exit $fail

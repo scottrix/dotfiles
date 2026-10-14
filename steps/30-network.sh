@@ -28,6 +28,9 @@ if grep -qx duid "$NET_ETC/dhcpcd.conf"; then
     sys_backup "$NET_ETC/dhcpcd.conf"
     srun sed -i 's/^duid$/clientid/' "$NET_ETC/dhcpcd.conf"
 fi
+# 1 when this run adds the deny line, so a rollback knows to take it out again
+deny_added=0
+grep -qxF "$DENY_WIFI" "$NET_ETC/dhcpcd.conf" 2> /dev/null || deny_added=1
 sys_line "$NET_ETC/dhcpcd.conf" "$DENY_WIFI"
 
 # A switch that is cut off (Ctrl-C, a dropped SSH session) leaves this behind,
@@ -73,9 +76,9 @@ other_manager() {
     return 1
 }
 
-# allow_wifi_dhcp  undo the dhcpcd deny line when dhcpcd served Wi-Fi for the old stack
+# allow_wifi_dhcp  take out the dhcpcd deny line again if this switch added it
 allow_wifi_dhcp() {
-    [ "$dhcpcd_was_running" = 1 ] || return 0
+    [ "$deny_added" = 1 ] || return 0
     sudo sed -i "/^denyinterfaces wlan\* wlp\*\$/d" "$NET_ETC/dhcpcd.conf" || true
 }
 
@@ -123,21 +126,28 @@ interrupted() {
 
 # The stack to hand over from: a running connman or wpa_supplicant, an earlier
 # switch that never finished, or connman enabled but stopped (as after one).
+# An unfinished switch's marker holds the state from before it started
+# (old stack, wpa_supplicant running, dhcpcd running, deny line added); it
+# wins over what runs now, which may be half switched or rebooted since.
 old="" wpa_was_running=0 dhcpcd_was_running=0
+m_old=""
+if [ -e "$marker" ]; then
+    read -r m_old m_wpa m_dhcpcd m_deny < "$marker" || true
+    case $m_old in connmand | wpa_supplicant) ;; *) m_old=connmand ;; esac
+fi
 other=$(other_manager) || other=""
 if [ -n "$other" ]; then
     use_iwd=0
+elif [ -n "$m_old" ]; then
+    old=$m_old wpa_was_running=${m_wpa:-0} dhcpcd_was_running=${m_dhcpcd:-0} deny_added=${m_deny:-0}
 elif started connmand; then
     old=connmand
 elif started wpa_supplicant; then
     old=wpa_supplicant
-elif [ -e "$marker" ]; then
-    read -r old wpa_was_running dhcpcd_was_running < "$marker" || true
-    case $old in connmand | wpa_supplicant) ;; *) old=connmand ;; esac
 elif enabled connmand; then
     old=connmand
 fi
-if [ -n "$old" ] && [ ! -e "$marker" ]; then
+if [ -n "$old" ] && [ -z "$m_old" ]; then
     if started wpa_supplicant || pgrep -x wpa_supplicant > /dev/null 2>&1; then wpa_was_running=1; fi
     if started dhcpcd; then dhcpcd_was_running=1; fi
 fi
@@ -149,6 +159,7 @@ elif [ -n "$old" ]; then
     if [ "$DRY_RUN" != 1 ] && started "$old" && ! online "$PRECHECK_TRIES"; then
         # the check can't work here (captive portal, proxy, blocked site), so it would roll back anyway
         allow_wifi_dhcp
+        rm -f "$marker"
         warn "can't reach https://archlinux.org through $name, so the network stays on $name (iwd and dhcpcd are set up but not enabled). Fix the connection and resume with: install --from 30-network"
         use_iwd=0
     elif [ "$DRY_RUN" = 1 ]; then
@@ -160,7 +171,7 @@ elif [ -n "$old" ]; then
             [ -z "$copied" ] || say "copied Wi-Fi networks from connman: $(sed 's|.*/||' <<< "$copied" | tr '\n' ' ')"
         fi
         mkdir -p "$(dirname "$marker")"
-        printf '%s %s %s\n' "$old" "$wpa_was_running" "$dhcpcd_was_running" > "$marker"
+        printf '%s %s %s %s\n' "$old" "$wpa_was_running" "$dhcpcd_was_running" "$deny_added" > "$marker"
         # from here on, any way out either finishes the switch or puts the old stack back
         trap interrupted INT TERM HUP
         trap '' PIPE
