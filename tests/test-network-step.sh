@@ -144,9 +144,10 @@ offline_before_switch_skips() {
 
 # no connman: another manager (or a wpa_supplicant + dhcpcd setup) runs the network
 no_connman() { rm -f "$F/run/connmand"; sed -i '/^connmand |/d' "$F/default"; }
-# left_alone: config written and warned about, iwd and dhcpcd neither started nor enabled
+# left_alone: config written and warned about, iwd and dhcpcd neither started nor enabled,
+# and dhcpcd still allowed to serve Wi-Fi
 left_alone() {
-    [ -f "$T/etc/iwd/main.conf" ] && grep -qxF 'denyinterfaces wlan* wlp*' "$T/etc/dhcpcd.conf" &&
+    [ -f "$T/etc/iwd/main.conf" ] && ! grep -q 'denyinterfaces' "$T/etc/dhcpcd.conf" &&
         ! grep -Eq 'rc-service (iwd|dhcpcd) (start|restart)|rc-service [a-z_]+ stop' "$CMDLOG" &&
         ! in_default iwd && ! in_default dhcpcd && in_default sshd &&
         grep -q "$1.*rc-update add iwd default" "$T/warn"

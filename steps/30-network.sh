@@ -28,10 +28,11 @@ if grep -qx duid "$NET_ETC/dhcpcd.conf"; then
     sys_backup "$NET_ETC/dhcpcd.conf"
     srun sed -i 's/^duid$/clientid/' "$NET_ETC/dhcpcd.conf"
 fi
-# 1 when this run adds the deny line, so a rollback knows to take it out again
+# The Wi-Fi deny line is only added once Wi-Fi goes to iwd (deny_wifi below).
+# 1 when this run adds it, so a rollback knows to take it out again.
 deny_added=0
 grep -qxF "$DENY_WIFI" "$NET_ETC/dhcpcd.conf" 2> /dev/null || deny_added=1
-sys_line "$NET_ETC/dhcpcd.conf" "$DENY_WIFI"
+deny_wifi() { sys_line "$NET_ETC/dhcpcd.conf" "$DENY_WIFI"; }
 
 # A switch that is cut off (Ctrl-C, a dropped SSH session) leaves this behind,
 # so a re-run checks the switch again instead of trusting it.
@@ -167,6 +168,7 @@ elif [ -n "$old" ]; then
         warn "can't reach https://archlinux.org through $name, so the network stays on $name (iwd and dhcpcd are set up but not enabled). Fix the connection and resume with: install --from 30-network"
         use_iwd=0
     elif [ "$DRY_RUN" = 1 ]; then
+        deny_wifi
         say "[dry-run] would switch from $name to iwd + dhcpcd (copying connman's Wi-Fi networks), and put $name back if that leaves the machine offline"
     else
         if [ "$old" = connmand ]; then
@@ -176,6 +178,7 @@ elif [ -n "$old" ]; then
         fi
         mkdir -p "$(dirname "$marker")"
         printf '%s %s %s %s\n' "$old" "$wpa_was_running" "$dhcpcd_was_running" "$deny_added" > "$marker"
+        deny_wifi
         # from here on, any way out either finishes the switch or puts the old stack back
         trap interrupted INT TERM HUP
         trap '' PIPE
@@ -197,6 +200,7 @@ elif [ -n "$old" ]; then
 else
     # wpa_supplicant isn't running but may still be enabled; it would fight iwd at boot
     if enabled wpa_supplicant && ! started wpa_supplicant; then srun rc-update del wpa_supplicant default; fi
+    deny_wifi
     started iwd || srun rc-service iwd start
     started dhcpcd || srun rc-service dhcpcd start
     srun resolvconf -u || true
