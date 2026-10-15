@@ -19,7 +19,13 @@ plug=$HOME/.vim/autoload/plug.vim
 if [ ! -s "$plug" ]; then
     run curl -fsSLo "$plug" --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/0.14.0/plug.vim
 fi
-if [ ! -d "$HOME/.vim/plugged/vim-airline" ]; then
-    run vim -Es -u "$HOME/.vimrc" -i NONE -c 'PlugInstall --sync' -c 'qa' < /dev/null ||
-        warn "vim plugins didn't install; open vim and run :PlugInstall"
+# vim-plug exits 0 even when a clone failed (a network blip), so check the result and retry once
+for try in 1 2; do
+    [ ! -d "$HOME/.vim/plugged/vim-airline" ] || break
+    [ "$try" = 1 ] || say "retrying the vim plugins"
+    run vim -Es -u "$HOME/.vimrc" -i NONE -c 'PlugInstall --sync' -c 'qa' < /dev/null || true
+    [ "$DRY_RUN" = 1 ] && break
+done
+if [ "$DRY_RUN" != 1 ] && [ ! -d "$HOME/.vim/plugged/vim-airline" ]; then
+    warn "vim plugins didn't install; open vim and run :PlugInstall"
 fi
