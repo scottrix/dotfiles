@@ -28,7 +28,17 @@ if ! command -v pikaur > /dev/null; then
     else
         build=$(mktemp -d)
         git clone --depth 1 https://aur.archlinux.org/pikaur.git "$build/pikaur"
-        (cd "$build/pikaur" && makepkg -si --noconfirm)
+        # makepkg -s/-i run "sudo -k pacman", which forgets the cached sudo password
+        # and prompts again (and fails under --yes), so install the pieces ourselves.
+        (
+            cd "$build/pikaur"
+            # shellcheck disable=SC1091,SC2154
+            deps=$(source ./PKGBUILD && printf '%s\n' "${depends[@]}" "${makedepends[@]}")
+            # shellcheck disable=SC2086
+            sudo pacman -S --needed --asdeps --noconfirm $deps
+            makepkg --noconfirm
+            sudo pacman -U --noconfirm ./*.pkg.tar.*
+        )
         rm -rf "$build"
     fi
 fi
