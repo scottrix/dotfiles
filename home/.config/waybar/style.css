@@ -1,5 +1,5 @@
 * {
-    font-family: sans-serif;
+    font-family: sans-serif, "Terminess Nerd Font";
     font-size: 12px;
     min-height: 0;
 }
@@ -21,3 +21,8 @@ window#waybar {
 }
 #battery.warning { color: #ffaa00; }
 #battery.critical { color: #ff4444; }
+#network, #pulseaudio, #battery {
+    padding: 0 4px;
+    font-size: 15px;
+}
+#network.linked, #network.disconnected, #pulseaudio.muted { color: #777777; }

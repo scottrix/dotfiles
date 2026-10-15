@@ -23,9 +23,9 @@
     "network#eth": {
         "interface": "${ETH_IF}",
         "interval": 5,
-        "format-ethernet": "eth {ipaddr}",
+        "format-ethernet": "󰈀",
         "format-wifi": "",
-        "format-linked": "eth no ip",
+        "format-linked": "󰈀",
         "format-disconnected": "",
         "tooltip-format": "{ifname} {ipaddr}/{cidr} via {gwaddr}",
         "on-click": "foot --app-id=impala -e impala"
@@ -33,23 +33,34 @@
     "network#wifi": {
         "interface": "wlan0",
         "interval": 5,
-        "format-wifi": "wifi {essid} {signalStrength}%",
+        "format-wifi": "{icon}",
+        "format-icons": ["󰤟", "󰤢", "󰤥", "󰤨"],
         "format-ethernet": "",
-        "format-linked": "wifi {essid} no ip",
-        "format-disconnected": "wifi off",
-        "tooltip-format": "{ifname} {essid} {ipaddr}/{cidr} via {gwaddr}",
+        "format-linked": "󰤫",
+        "format-disconnected": "󰤮",
+        "tooltip-format": "{ifname} {essid} {signalStrength}% {ipaddr}/{cidr} via {gwaddr}",
+        "tooltip-format-disconnected": "wifi off",
         "on-click": "foot --app-id=impala -e impala"
     },
     "pulseaudio": {
-        "format": "vol {volume}%",
-        "format-muted": "vol muted",
+        "format": "{icon}",
+        "format-muted": "󰝟",
+        "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
+        "tooltip-format": "{volume}% {desc}",
         "scroll-step": 2,
         "on-click": "pavucontrol",
         "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
     "battery": {
-        "format": "bat {capacity}%",
-        "format-charging": "chg {capacity}%",
+        "format": "{icon}",
+        "format-charging": "{icon}",
+        "format-plugged": "{icon}",
+        "format-icons": {
+            "default": ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"],
+            "charging": ["󰢜", "󰂆", "󰂇", "󰂈", "󰢝", "󰂉", "󰢞", "󰂊", "󰂋", "󰂅"],
+            "plugged": ["󰢜", "󰂆", "󰂇", "󰂈", "󰢝", "󰂉", "󰢞", "󰂊", "󰂋", "󰂅"]
+        },
+        "tooltip-format": "{capacity}% ({time} left)",
         "states": { "warning": 20, "critical": 10 }
     },
     "clock": {
