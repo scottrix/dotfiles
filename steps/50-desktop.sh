@@ -72,5 +72,7 @@ link home/.config/foot/foot.ini "$HOME/.config/foot/foot.ini"
 link home/.config/mako/config "$HOME/.config/mako/config"
 link home/.local/share/themes/Clearlooks-3.4/openbox-3/themerc "$HOME/.local/share/themes/Clearlooks-3.4/openbox-3/themerc"
 link home/bin/lock "$HOME/bin/lock"
+# lock reads input devices to wake the blanked display; takes effect at next login.
+id -nG "$USER" | tr ' ' '\n' | grep -qx input || srun usermod -aG input "$USER"
 [ -d "$HOME/.logs" ] || run mkdir -p "$HOME/.logs"
 [ -d "$HOME/Pictures" ] || run mkdir -p "$HOME/Pictures"

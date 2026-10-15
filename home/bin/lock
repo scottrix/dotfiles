@@ -1,2 +1,32 @@
 #!/usr/bin/env bash
-exec swaylock -f -e -c 000020
+# Lock the screen, and keep the display off while it stays locked.
+#
+# swaylock -f returns as soon as the screen is locked, so the before-sleep hook
+# in labwc's autostart still suspends straight away. A watcher, alive only
+# while swaylock runs, powers the outputs off after a few seconds without
+# input; any key or mouse movement turns them back on to show the prompt.
+# Input is read with libinput rather than swayidle, because apps that hold an
+# idle inhibitor (browsers, Teams) stop swayidle's timeout from ever firing.
+# Reading input devices needs the user in the input group.
+blank_after=5
+
+swaylock -f -e -c 000020 || exit
+lock_pid=$(pgrep -nx swaylock) || exit 0
+
+(
+    exec < <(exec libinput debug-events)
+    input_pid=$!
+    off=
+    while kill -0 "$lock_pid"; do
+        if read -r -t "$blank_after" _; then
+            [ -n "$off" ] && wlopm --on '*' && off=
+        elif (( $? > 128 )); then
+            [ -z "$off" ] && wlopm --off '*' && off=1
+        else
+            break
+        fi
+    done
+    kill "$input_pid"
+    wlopm --on '*'
+) >/dev/null 2>&1 &
+disown

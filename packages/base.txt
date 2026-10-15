@@ -7,6 +7,7 @@ foot
 swaybg
 swayidle
 swaylock
+wlopm               # display off while locked
 mako
 libnotify           # notify-send
 dconf               # stores gsettings (middle-click paste)
