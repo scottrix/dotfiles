@@ -9,7 +9,7 @@
     "modules-right": ["tray", "network#eth", "network#wifi", "pulseaudio", "battery", "clock"],
 
     "wlr/taskbar": {
-        "format": "{icon} {title:.30}",
+        "format": "{icon} {title:.20}",
         "icon-size": 16,
         "tooltip-format": "{title}",
         "on-click": "activate",
