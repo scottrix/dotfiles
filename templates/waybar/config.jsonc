@@ -1,20 +1,13 @@
-// tint2 replacement: bottom panel, desktops + taskbar left, tray/volume/battery/clock right
+// tint2 replacement: bottom panel, taskbar left, tray/volume/battery/clock right
 {
     "layer": "top",
     "position": "bottom",
     "height": 27,
     "spacing": 6,
-    "modules-left": ["ext/workspaces", "wlr/taskbar"],
+    "modules-left": ["wlr/taskbar"],
     "modules-center": [],
     "modules-right": ["tray", "network#eth", "network#wifi", "pulseaudio", "battery", "clock"],
 
-    "ext/workspaces": {
-        "format": "{name}",
-        "on-click": "activate",
-        "ignore-hidden": true,
-        "sort-by-name": false,
-        "sort-by-id": true
-    },
     "wlr/taskbar": {
         "format": "{icon} {title:.30}",
         "icon-size": 16,

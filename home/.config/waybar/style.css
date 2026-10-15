@@ -7,12 +7,12 @@ window#waybar {
     background: #222222;
     color: #ffffff;
 }
-#workspaces button, #taskbar button {
+#taskbar button {
     padding: 0 6px;
     color: #cccccc;
     border-radius: 0;
 }
-#workspaces button.active, #taskbar button.active {
+#taskbar button.active {
     background: #006688;
     color: #ffffff;
 }
